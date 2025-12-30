@@ -1,0 +1,16 @@
+version: '3.8'
+
+services:
+  app:
+    build: .
+    container_name: next-gif-to-webp
+    ports:
+      - "8090:3000"
+    environment:
+      - NODE_ENV=production
+    restart: unless-stopped
+    # 可选：挂载项目文件用于开发环境
+    # volumes:
+    #   - .:/app
+    #   - /app/node_modules
+    #   - /app/.next
