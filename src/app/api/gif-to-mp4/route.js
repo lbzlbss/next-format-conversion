@@ -1,20 +1,37 @@
 import { NextResponse } from 'next/server';
 import fs from 'fs';
 import path from 'path';
+import os from 'os';
 import ffmpeg from 'fluent-ffmpeg';
 
-// 配置ffmpeg路径，使用项目内的ffmpeg
-const ffmpegPath = path.join(process.cwd(), 'public', 'ffmpeg', 'ffmpeg');
+// 配置ffmpeg路径
+let ffmpegPath;
+if (process.env.NODE_ENV === 'production') {
+  // 生产环境下使用系统安装的ffmpeg
+  ffmpegPath = '/usr/bin/ffmpeg';
+} else {
+  // 开发环境下使用项目内的ffmpeg
+  ffmpegPath = path.join(process.cwd(), 'public', 'ffmpeg', 'ffmpeg');
+}
+
 if (fs.existsSync(ffmpegPath)) {
   ffmpeg.setFfmpegPath(ffmpegPath);
   console.log(`已设置ffmpeg路径: ${ffmpegPath}`);
+} else {
+  console.error(`未找到ffmpeg可执行文件: ${ffmpegPath}`);
+  // 在开发环境中，如果找不到ffmpeg，尝试使用系统安装的
+  if (process.env.NODE_ENV !== 'production') {
+    const systemFfmpeg = '/usr/bin/ffmpeg';
+    if (fs.existsSync(systemFfmpeg)) {
+      ffmpeg.setFfmpegPath(systemFfmpeg);
+      console.log(`已回退到系统ffmpeg: ${systemFfmpeg}`);
+    }
+  }
 }
 
-// 确保临时目录存在
-const tempDir = path.join(process.cwd(), 'temp');
-if (!fs.existsSync(tempDir)) {
-  fs.mkdirSync(tempDir, { recursive: true });
-}
+// 使用系统临时目录
+const tempDir = os.tmpdir();
+console.log(`使用临时目录: ${tempDir}`);
 
 export async function POST(request) {
   try {
@@ -48,8 +65,13 @@ export async function POST(request) {
         bitrate: config.bitrate || '192k'
       };
 
-      // 使用ffmpeg将GIF转换为MP4
+      // 使用ffmpeg将GIF转换为MP4，添加超时机制
       await new Promise((resolve, reject) => {
+        // 设置120秒超时
+        const timeout = setTimeout(() => {
+          reject(new Error('转换超时'));
+        }, 120000);
+
         ffmpeg(tempFilePath)
           .outputOptions([
             `-c:v libx264`,
@@ -61,8 +83,17 @@ export async function POST(request) {
             `-movflags +faststart`,
             `-pix_fmt yuv420p` // 确保兼容性
           ])
-          .on('end', resolve)
-          .on('error', reject)
+          .on('end', () => {
+            clearTimeout(timeout);
+            resolve();
+          })
+          .on('error', (err) => {
+            clearTimeout(timeout);
+            reject(err);
+          })
+          .on('start', (cmd) => {
+            console.log(`开始执行ffmpeg命令: ${cmd}`);
+          })
           .save(outputFilePath);
       });
 

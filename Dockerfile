@@ -4,6 +4,9 @@ FROM node:20-alpine
 # 设置工作目录
 WORKDIR /app
 
+# 安装ffmpeg和其他依赖
+RUN apk add --no-cache ffmpeg
+
 # 安装pnpm
 RUN npm install -g pnpm
 
