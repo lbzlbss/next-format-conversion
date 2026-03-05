@@ -1,13 +1,14 @@
 'use client';
 import React, { useState } from 'react';
 import { Tabs, Card, Typography } from 'antd';
-import { SwapOutlined, CompressOutlined, VideoCameraOutlined, PictureOutlined, FileImageOutlined } from '@ant-design/icons';
+import { SwapOutlined, CompressOutlined, VideoCameraOutlined, PictureOutlined, FileImageOutlined, EditOutlined } from '@ant-design/icons';
 import GifToWebp from './components/GifToWebp';
 import Mp4Compress from './components/Mp4Compress';
 import GifToMp4 from './components/GifToMp4';
 import Mp4FirstFrame from './components/Mp4FirstFrame';
 import ImageCompress from './components/ImageCompress';
 import GifCompress from './components/GifCompress';
+import ImageGenerate from './components/ImageGenerate';
 
 const { Title } = Typography;
 
@@ -74,6 +75,16 @@ const HomePage = () => {
         </span>
       ),
       children: <GifCompress />,
+    },
+    {
+      key: 'imageGenerate',
+      label: (
+        <span>
+          <EditOutlined />
+          AI 图像生成
+        </span>
+      ),
+      children: <ImageGenerate />,
     },
   ];
 
