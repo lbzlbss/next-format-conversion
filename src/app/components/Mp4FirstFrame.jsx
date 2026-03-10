@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { Button, Card, Space, Tag, Progress, Slider, Select, message, Typography } from 'antd';
 const { Text } = Typography;
 import { UploadOutlined, DownloadOutlined, DeleteOutlined, ReloadOutlined, PictureOutlined } from '@ant-design/icons';
@@ -8,19 +8,27 @@ import JSZip from 'jszip';
 
 const { Option } = Select;
 
-export default function Mp4FirstFrame() {
+const DEFAULT_CONFIG = {
+  format: 'webp',
+  quality: 80,
+  effort: 4,
+};
+
+export default function Mp4FirstFrame({ config: controlledConfig, onConfigChange }) {
   const [uploadedFiles, setUploadedFiles] = useState([]);
-  const [config, setConfig] = useState({
-    format: 'webp',
-    quality: 80,
-    effort: 4
-  });
+  const isControlled = Boolean(controlledConfig && onConfigChange);
+  const [internalConfig, setInternalConfig] = useState(DEFAULT_CONFIG);
+  const config = useMemo(() => (isControlled ? controlledConfig : internalConfig), [controlledConfig, internalConfig, isControlled]);
   const [converting, setConverting] = useState(false);
   const [toastLoading, setToastLoading] = useState(null);
 
   // 处理配置变化
   const handleConfigChange = (key, value) => {
-    setConfig(prev => ({ ...prev, [key]: value }));
+    if (isControlled) {
+      onConfigChange({ [key]: value });
+      return;
+    }
+    setInternalConfig(prev => ({ ...prev, [key]: value }));
   };
 
   // 处理转换

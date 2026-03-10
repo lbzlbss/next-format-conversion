@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { Button, Card, Space, Tag, Progress, Slider, message, Select, Typography } from 'antd';
 const { Text } = Typography;
 import { UploadOutlined, DownloadOutlined, DeleteOutlined, ReloadOutlined, CompressOutlined } from '@ant-design/icons';
@@ -8,15 +8,19 @@ import JSZip from 'jszip';
 
 const { Option } = Select;
 
-export default function Mp4Compress() {
+const DEFAULT_CONFIG = {
+  qualityLevel: 'medium',
+  preset: 'medium',
+  audioBitrate: '128k',
+  maxWidth: null,
+  maxHeight: null,
+};
+
+export default function Mp4Compress({ config: controlledConfig, onConfigChange }) {
   const [uploadedFiles, setUploadedFiles] = useState([]);
-  const [config, setConfig] = useState({
-    qualityLevel: 'medium',
-    preset: 'medium',
-    audioBitrate: '128k',
-    maxWidth: null,
-    maxHeight: null
-  });
+  const isControlled = Boolean(controlledConfig && onConfigChange);
+  const [internalConfig, setInternalConfig] = useState(DEFAULT_CONFIG);
+  const config = useMemo(() => (isControlled ? controlledConfig : internalConfig), [controlledConfig, internalConfig, isControlled]);
   const [compressing, setCompressing] = useState(false);
   const [toastLoading, setToastLoading] = useState(null);
 
@@ -43,7 +47,11 @@ export default function Mp4Compress() {
 
   // 处理配置变化
   const handleConfigChange = (key, value) => {
-    setConfig(prev => ({ ...prev, [key]: value }));
+    if (isControlled) {
+      onConfigChange({ [key]: value });
+      return;
+    }
+    setInternalConfig(prev => ({ ...prev, [key]: value }));
   };
 
   // 处理压缩
@@ -428,7 +436,7 @@ export default function Mp4Compress() {
               min={32}
               max={320}
               step={8}
-              value={parseInt(config.audioBitrate) / 1000}
+              value={parseInt(config.audioBitrate, 10)}
               onChange={(value) => handleConfigChange('audioBitrate', `${value}k`)}
               marks={{
                 32: '32k',

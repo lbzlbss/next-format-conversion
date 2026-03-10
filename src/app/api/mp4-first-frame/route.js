@@ -118,10 +118,12 @@ export async function POST(request) {
       const frameFile = fs.readFileSync(outputFilePath);
 
       // 返回提取的首帧
+      const downloadName = `${String(file.name || 'video.mp4').replace(/\.mp4$/i, '_first_frame.')}${conversionConfig.format}`;
+      const asciiFallback = downloadName.replace(/[^\x20-\x7E]/g, '_');
       return new Response(frameFile, {
         headers: {
           'Content-Type': `image/${conversionConfig.format}`,
-          'Content-Disposition': `attachment; filename="${file.name.replace(/\.mp4$/i, '_first_frame.')}${conversionConfig.format}"`,
+          'Content-Disposition': `attachment; filename="${asciiFallback}"; filename*=UTF-8''${encodeURIComponent(downloadName)}`,
           'Content-Length': frameFile.length
         }
       });

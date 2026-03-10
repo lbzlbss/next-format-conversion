@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { Button, Card, Space, Tag, Progress, Slider, Select, message, Typography } from 'antd';
 const { Text } = Typography;
 import { UploadOutlined, DownloadOutlined, DeleteOutlined, ReloadOutlined, SwapOutlined } from '@ant-design/icons';
@@ -8,14 +8,18 @@ import JSZip from 'jszip';
 
 const { Option } = Select;
 
-export default function GifToMp4() {
+const DEFAULT_CONFIG = {
+  crf: 23,
+  preset: 'medium',
+  fps: 30,
+  bitrate: '192k',
+};
+
+export default function GifToMp4({ config: controlledConfig, onConfigChange }) {
   const [uploadedFiles, setUploadedFiles] = useState([]);
-  const [config, setConfig] = useState({
-    crf: 23,
-    preset: 'medium',
-    fps: 30,
-    bitrate: '192k'
-  });
+  const isControlled = Boolean(controlledConfig && onConfigChange);
+  const [internalConfig, setInternalConfig] = useState(DEFAULT_CONFIG);
+  const config = useMemo(() => (isControlled ? controlledConfig : internalConfig), [controlledConfig, internalConfig, isControlled]);
   const [converting, setConverting] = useState(false);
   const [toastLoading, setToastLoading] = useState(null);
 
@@ -34,7 +38,11 @@ export default function GifToMp4() {
 
   // 处理配置变化
   const handleConfigChange = (key, value) => {
-    setConfig(prev => ({ ...prev, [key]: value }));
+    if (isControlled) {
+      onConfigChange({ [key]: value });
+      return;
+    }
+    setInternalConfig(prev => ({ ...prev, [key]: value }));
   };
 
   // 处理转换

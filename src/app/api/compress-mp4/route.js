@@ -130,10 +130,12 @@ export async function POST(request) {
       });
 
       // 返回压缩后的文件
+      const downloadName = `compressed_${String(file.name || 'video.mp4')}`;
+      const asciiFallback = downloadName.replace(/[^\x20-\x7E]/g, '_');
       return new Response(compressedFile, {
         headers: {
           'Content-Type': 'video/mp4',
-          'Content-Disposition': `attachment; filename="compressed_${file.name}"`,
+          'Content-Disposition': `attachment; filename="${asciiFallback}"; filename*=UTF-8''${encodeURIComponent(downloadName)}`,
           'Content-Length': compressedFile.length,
           'x-compression-info': compressionInfo
         }

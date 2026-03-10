@@ -101,10 +101,12 @@ export async function POST(request) {
       const convertedFile = fs.readFileSync(outputFilePath);
 
       // 返回转换后的文件
+      const downloadName = String(file.name || 'converted.mp4').replace(/\.gif$/i, '.mp4');
+      const asciiFallback = downloadName.replace(/[^\x20-\x7E]/g, '_');
       return new Response(convertedFile, {
         headers: {
           'Content-Type': 'video/mp4',
-          'Content-Disposition': `attachment; filename="${file.name.replace(/\.gif$/i, '.mp4')}"`,
+          'Content-Disposition': `attachment; filename="${asciiFallback}"; filename*=UTF-8''${encodeURIComponent(downloadName)}`,
           'Content-Length': convertedFile.length
         }
       });

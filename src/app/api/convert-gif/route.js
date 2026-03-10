@@ -49,10 +49,12 @@ export async function POST(request) {
       if (existsSync(tempOutputPath)) unlinkSync(tempOutputPath);
 
       // 返回转换后的 WebP 文件
+      const downloadName = String(file.name || 'converted.webp').replace(/\.gif$/i, '.webp');
+      const asciiFallback = downloadName.replace(/[^\x20-\x7E]/g, '_');
       return new Response(outputBuffer, {
         headers: {
           'Content-Type': 'image/webp',
-          'Content-Disposition': `attachment; filename="${file.name.replace('.gif', '.webp')}"`
+          'Content-Disposition': `attachment; filename="${asciiFallback}"; filename*=UTF-8''${encodeURIComponent(downloadName)}`
         }
       });
     } catch (error) {

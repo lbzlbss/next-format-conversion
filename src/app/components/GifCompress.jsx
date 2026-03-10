@@ -1,28 +1,36 @@
 'use client';
 
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { Button, Card, Space, Tag, Progress, Checkbox, Slider, message, Typography } from 'antd';
 const { Text } = Typography;
 import { UploadOutlined, DownloadOutlined, DeleteOutlined, ReloadOutlined, CompressOutlined } from '@ant-design/icons';
 import JSZip from 'jszip';
 
-export default function GifCompress() {
+const DEFAULT_CONFIG = {
+  quality: 30,
+  effort: 10,
+  speed: 1,
+  colors: 256,
+  dither: 0.2,
+  compressionLevel: 9,
+  lossy: true,
+};
+
+export default function GifCompress({ config: controlledConfig, onConfigChange }) {
   const [uploadedFiles, setUploadedFiles] = useState([]);
-  const [config, setConfig] = useState({
-    quality: 30,
-    effort: 10,
-    speed: 1,
-    colors: 256,
-    dither: 0.2,
-    compressionLevel: 9,
-    lossy: true
-  });
+  const isControlled = Boolean(controlledConfig && onConfigChange);
+  const [internalConfig, setInternalConfig] = useState(DEFAULT_CONFIG);
+  const config = useMemo(() => (isControlled ? controlledConfig : internalConfig), [controlledConfig, internalConfig, isControlled]);
   const [converting, setConverting] = useState(false);
   const [toastLoading, setToastLoading] = useState(null);
 
   // 处理配置变化
   const handleConfigChange = (key, value) => {
-    setConfig(prev => ({ ...prev, [key]: value }));
+    if (isControlled) {
+      onConfigChange({ [key]: value });
+      return;
+    }
+    setInternalConfig(prev => ({ ...prev, [key]: value }));
   };
 
   // 处理压缩
