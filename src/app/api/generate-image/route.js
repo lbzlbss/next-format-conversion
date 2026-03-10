@@ -69,7 +69,7 @@ export async function POST(request) {
     }
 
     // GrsAI endpoint
-    const url = 'https://grsai.dakka.com.cn/v1beta/models/nano-banana-2:streamGenerateContent';
+    const url = 'https://grsaiapi.com/v1beta/models/nano-banana-2:streamGenerateContent';
 
     const headers = {
       'Content-Type': 'application/json',
