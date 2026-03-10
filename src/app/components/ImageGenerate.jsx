@@ -44,9 +44,7 @@ const ImageGenerate = () => {
       }
 
       const response = await axios.post('/api/generate-image', formData, {
-        headers: {
-          'Content-Type': 'multipart/form-data',
-        },
+        // 不要手动设置 multipart/form-data，让浏览器/axios 自动补 boundary
         onUploadProgress: (progressEvent) => {
           const percent = Math.round((progressEvent.loaded * 100) / progressEvent.total);
           setProgress(percent);

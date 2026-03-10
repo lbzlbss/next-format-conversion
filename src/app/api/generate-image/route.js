@@ -22,19 +22,26 @@ export async function POST(request) {
   try {
     let prompt, mode, imageFile;
     const contentType = request.headers.get('content-type');
+    console.log('[generate-image] content-type:', contentType);
     
     if (contentType && contentType.includes('multipart/form-data')) {
       // Handle form-data request
       const formData = await request.formData();
+      // 先把所有字段打印出来，便于定位“无数据”问题
+      const keys = [];
+      for (const [k, v] of formData.entries()) {
+        keys.push([k, typeof v, v && typeof v === 'object' ? (v.name || v.type || 'object') : v]);
+      }
+      console.log('[generate-image] form keys:', keys);
+
       prompt = formData.get('prompt');
       mode = formData.get('mode') || 'text2image';
       
       // Get all image files (multiple files with the same name)
       const imageFiles = [];
       for (const [key, value] of formData.entries()) {
-        if (key === 'image' && value instanceof File) {
-          imageFiles.push(value);
-        }
+        // Node 运行时不一定有全局 File，用 “是否有 arrayBuffer” 来判断更稳
+        if (key === 'image' && value && typeof value.arrayBuffer === 'function') imageFiles.push(value);
       }
       imageFile = imageFiles.length > 0 ? (imageFiles.length === 1 ? imageFiles[0] : imageFiles) : null;
     } else if (contentType && contentType.includes('application/json')) {
@@ -47,7 +54,12 @@ export async function POST(request) {
       return NextResponse.json({ error: '不支持的请求格式' }, { status: 400 });
     }
 
-    if (!prompt) {
+    prompt = typeof prompt === 'string' ? prompt : (prompt ? String(prompt) : '');
+    mode = typeof mode === 'string' ? mode : (mode ? String(mode) : 'text2image');
+
+    console.log('[generate-image] parsed:', { promptLen: prompt?.length, mode, hasImage: !!imageFile });
+
+    if (!prompt || !prompt.trim()) {
       return NextResponse.json({ error: '提示词不能为空' }, { status: 400 });
     }
 
