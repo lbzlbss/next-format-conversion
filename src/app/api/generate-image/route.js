@@ -2,7 +2,6 @@ import { NextResponse } from 'next/server';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import axios from 'axios';
 import * as dotenv from 'dotenv';
 
 // Load environment variables
@@ -90,8 +89,26 @@ export async function POST(request) {
 
     console.log('[generate-image] Ark payload:', { ...payload, prompt: `${prompt.slice(0, 50)}...` });
 
-    const response = await axios.post(url, payload, { headers });
-    const arkData = response.data;
+    const response = await fetch(url, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify(payload),
+    });
+    let arkData;
+    try {
+      arkData = await response.json();
+    } catch (_) {
+      arkData = {};
+    }
+
+    if (!response.ok) {
+      console.error('[generate-image] Ark error:', response.status, arkData);
+      return NextResponse.json(
+        { error: arkData?.error?.message || `Ark 接口错误: ${response.status}` },
+        { status: response.status >= 500 ? 502 : response.status }
+      );
+    }
+
     console.log('[generate-image] Ark response:', arkData);
 
     // Ark 生图典型返回：{ data: [{ url: '...' }, ...], ... }
@@ -116,8 +133,10 @@ export async function POST(request) {
     if (imageData.type === 'base64') {
       fs.writeFileSync(outputPath, Buffer.from(imageData.data, 'base64'));
     } else if (imageData.type === 'url') {
-      const imgResponse = await axios.get(imageData.data, { responseType: 'arraybuffer' });
-      fs.writeFileSync(outputPath, Buffer.from(imgResponse.data));
+      const imgResponse = await fetch(imageData.data);
+      if (!imgResponse.ok) throw new Error(`下载图片失败: ${imgResponse.status}`);
+      const arrayBuffer = await imgResponse.arrayBuffer();
+      fs.writeFileSync(outputPath, Buffer.from(arrayBuffer));
     }
 
     // Return image URL
