@@ -63,10 +63,18 @@ const ImageGenerate = () => {
   };
 
   const handleDownload = () => {
-    if (imageUrl) {
+    if (!imageUrl) return;
+    const filename = `generated_${Date.now()}.png`;
+    if (imageUrl.startsWith('http://') || imageUrl.startsWith('https://')) {
+      const proxyUrl = `/api/proxy-image?url=${encodeURIComponent(imageUrl)}&filename=${encodeURIComponent(filename)}`;
+      const link = document.createElement('a');
+      link.href = proxyUrl;
+      link.download = filename;
+      link.click();
+    } else {
       const link = document.createElement('a');
       link.href = imageUrl;
-      link.download = `generated_${Date.now()}.png`;
+      link.download = filename;
       link.click();
     }
   };
