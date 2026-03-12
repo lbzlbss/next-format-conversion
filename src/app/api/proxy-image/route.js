@@ -1,16 +1,14 @@
 import { NextResponse } from 'next/server';
 
-/** 允许代理的图片域名白名单，防止滥用 */
-const ALLOWED_ORIGINS = [
-  'https://ark-content-generation-cn-beijing.tos-cn-beijing.volces.com',
-  'https://ark.cn-beijing.volces.com',
-];
+/** 允许代理的图片域名：Ark/火山引擎 CDN 相关 */
+const ALLOWED_HOSTS = ['volces.com', 'volcengine.com', 'volccdn.com'];
 
 function isAllowedUrl(href) {
   try {
     const u = new URL(href);
     if (u.protocol !== 'https:' && u.protocol !== 'http:') return false;
-    return ALLOWED_ORIGINS.some((allowed) => u.origin === allowed);
+    const host = u.hostname.toLowerCase();
+    return ALLOWED_HOSTS.some((h) => host === h || host.endsWith('.' + h));
   } catch {
     return false;
   }

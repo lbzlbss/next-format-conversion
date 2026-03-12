@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Button, Input, Upload, message, Card, Space, Progress, Radio } from 'antd';
-import { UploadOutlined, EditOutlined, PictureOutlined } from '@ant-design/icons';
+import { UploadOutlined, EditOutlined, PictureOutlined, CopyOutlined } from '@ant-design/icons';
 import axios from 'axios';
 
 const { TextArea } = Input;
@@ -62,15 +62,46 @@ const ImageGenerate = () => {
     }
   };
 
-  const handleDownload = () => {
+  const handleCopyDownloadLink = async () => {
+    if (!imageUrl) return;
+    const filename = `generated_${Date.now()}.png`;
+    let textToCopy = imageUrl;
+    if (imageUrl.startsWith('http://') || imageUrl.startsWith('https://')) {
+      const origin = typeof window !== 'undefined' ? window.location.origin : '';
+      textToCopy = `${origin}/api/proxy-image?url=${encodeURIComponent(imageUrl)}&filename=${encodeURIComponent(filename)}`;
+    }
+    try {
+      await navigator.clipboard.writeText(textToCopy);
+      message.success('下载链接已复制到剪贴板');
+    } catch (e) {
+      message.error('复制失败，请手动复制');
+    }
+  };
+
+  const handleDownload = async () => {
     if (!imageUrl) return;
     const filename = `generated_${Date.now()}.png`;
     if (imageUrl.startsWith('http://') || imageUrl.startsWith('https://')) {
       const proxyUrl = `/api/proxy-image?url=${encodeURIComponent(imageUrl)}&filename=${encodeURIComponent(filename)}`;
-      const link = document.createElement('a');
-      link.href = proxyUrl;
-      link.download = filename;
-      link.click();
+      try {
+        const res = await fetch(proxyUrl);
+        if (!res.ok) {
+          const data = await res.json().catch(() => ({}));
+          message.error(data.error || '下载失败，请重试');
+          return;
+        }
+        const blob = await res.blob();
+        const blobUrl = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = blobUrl;
+        link.download = filename;
+        link.click();
+        URL.revokeObjectURL(blobUrl);
+        message.success('图片已开始下载');
+      } catch (e) {
+        console.error(e);
+        message.error('下载失败，请重试');
+      }
     } else {
       const link = document.createElement('a');
       link.href = imageUrl;
@@ -193,16 +224,23 @@ const ImageGenerate = () => {
                   objectFit: 'contain'
                 }} 
               />
-              <Button
-                type="default"
-                onClick={handleDownload}
-                style={{ 
-                  marginTop: '16px',
-                  borderRadius: '6px'
-                }}
-              >
-                下载图片
-              </Button>
+              <Space style={{ marginTop: '16px' }}>
+                <Button
+                  type="default"
+                  icon={<CopyOutlined />}
+                  onClick={handleCopyDownloadLink}
+                  style={{ borderRadius: '6px' }}
+                >
+                  复制下载链接
+                </Button>
+                <Button
+                  type="default"
+                  onClick={handleDownload}
+                  style={{ borderRadius: '6px' }}
+                >
+                  下载图片
+                </Button>
+              </Space>
             </Card>
           </div>
         )}
