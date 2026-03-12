@@ -2,7 +2,6 @@ import { NextResponse } from 'next/server';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import FormData from 'form-data';
 import axios from 'axios';
 import * as dotenv from 'dotenv';
 
@@ -63,137 +62,46 @@ export async function POST(request) {
       return NextResponse.json({ error: '提示词不能为空' }, { status: 400 });
     }
 
-    const apiKey = process.env.GRSAI_API_KEY;
+    // ==== 接入 Ark Doubao Seedream 生图接口 ====
+    // 从项目根目录 .env 读取 ARK_API_KEY
+    const apiKey = process.env.ARK_API_KEY;
     if (!apiKey) {
-      return NextResponse.json({ error: 'GRSAI_API_KEY 环境变量未设置' }, { status: 500 });
+      return NextResponse.json({ error: 'ARK_API_KEY 环境变量未设置' }, { status: 500 });
     }
 
-    // GrsAI endpoint
-    const url = 'https://grsaiapi.com/v1beta/models/nano-banana-2:streamGenerateContent';
+    // Ark images/generations endpoint
+    const url = 'https://ark.cn-beijing.volces.com/api/v3/images/generations';
 
     const headers = {
       'Content-Type': 'application/json',
-      'Authorization': `Bearer ${apiKey}`,
+      Authorization: `Bearer ${apiKey}`,
     };
 
-    // Prepare parts for multi-modal input
-    const parts = [{ "text": prompt }];
-
-    if (mode === 'image2image' && imageFile) {
-      // Handle multiple images for image-to-image generation
-      if (Array.isArray(imageFile)) {
-        // For multiple images upload
-        for (const file of imageFile) {
-          const buffer = Buffer.from(await file.arrayBuffer());
-          const imageB64 = buffer.toString('base64');
-          parts.push({
-            "inline_data": {
-              "mime_type": file.type || "image/png",
-              "data": imageB64
-            }
-          });
-        }
-      } else {
-        // For single image upload (backward compatibility)
-        const buffer = Buffer.from(await imageFile.arrayBuffer());
-        const imageB64 = buffer.toString('base64');
-        parts.push({
-          "inline_data": {
-            "mime_type": imageFile.type || "image/png",
-            "data": imageB64
-          }
-        });
-      }
-    }
-
-    // Request payload following Gemini format
+    // 目前示例是纯文生图，图生图模式暂时复用同一接口，只是保留前端入口
     const payload = {
-      "contents": [{
-        "parts": parts
-      }]
-    }
+      model: 'doubao-seedream-5-0-260128',
+      prompt,
+      sequential_image_generation: 'disabled',
+      response_format: 'url', // 让 Ark 返回图片 URL
+      size: '2K',
+      stream: false,
+      watermark: true,
+    };
 
-    // Send request to GrsAI API
-    const response = await axios.post(url, payload, {
-      headers,
-      responseType: 'text',
-    });
+    console.log('[generate-image] Ark payload:', { ...payload, prompt: `${prompt.slice(0, 50)}...` });
 
-    // Process response
+    const response = await axios.post(url, payload, { headers });
+    const arkData = response.data;
+    console.log('[generate-image] Ark response:', arkData);
+
+    // Ark 生图典型返回：{ data: [{ url: '...' }, ...], ... }
     let imageData = null;
-    const responseData = response.data;
-    console.log('API Response:', responseData);
-
-    // Handle response data
-    let text = responseData;
-    if (typeof text === 'string') {
-      text = text.trim();
-    } else {
-      text = JSON.stringify(text);
-    }
-    
-    const results_to_process = [];
-    
-    try {
-      // Try parsing as a single JSON object or list
-      const result = JSON.parse(text);
-      if (Array.isArray(result)) {
-        results_to_process.push(...result);
-      } else {
-        results_to_process.push(result);
-      }
-    } catch (e) {
-      // Try parsing concatenated JSON objects (common in streams)
-      const chunks = [];
-      let bracketLevel = 0;
-      let currentChunk = '';
-      
-      for (const char of text) {
-        if (char === '{') {
-          bracketLevel++;
-        }
-        if (bracketLevel > 0) {
-          currentChunk += char;
-        }
-        if (char === '}') {
-          bracketLevel--;
-          if (bracketLevel === 0) {
-            chunks.push(currentChunk);
-            currentChunk = '';
-          }
-        }
-      }
-
-      for (const chunk of chunks) {
-        try {
-          const result = JSON.parse(chunk);
-          results_to_process.push(result);
-        } catch (e) {
-          continue;
-        }
-      }
-    }
-
-    // Process results
-    for (const res of results_to_process) {
-      // Check for explicit error messages from GRS API
-      if (res.get && res.get('msg')) {
-        console.error('API Message:', res.get('msg'));
-        if (res.get('msg').toLowerCase().includes('credits not enough')) {
-          return NextResponse.json({ error: 'API 余额不足，请检查账号余额' }, { status: 500 });
-        }
-      }
-
-      if (res.get && res.get('error')) {
-        console.error('API Error:', res.get('error'));
-        return NextResponse.json({ error: `API 错误: ${res.get('error')}` }, { status: 500 });
-      }
-
-      // Find image data in response
-      const found = findImageData(res);
-      if (found) {
-        imageData = found;
-        break;
+    if (arkData && Array.isArray(arkData.data) && arkData.data.length > 0) {
+      const first = arkData.data[0];
+      if (first.url && typeof first.url === 'string') {
+        imageData = { type: 'url', data: first.url };
+      } else if (first.b64_json) {
+        imageData = { type: 'base64', data: first.b64_json };
       }
     }
 

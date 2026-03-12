@@ -19,6 +19,7 @@ import Mp4FirstFrame from './components/Mp4FirstFrame';
 import ImageCompress from './components/ImageCompress';
 import GifCompress from './components/GifCompress';
 import ImageGenerate from './components/ImageGenerate';
+import AiChatAssistant from './components/AiChatAssistant';
 
 const HomePage = () => {
   const [activeKey, setActiveKey] = useState('gifToWebp');
@@ -274,7 +275,7 @@ const HomePage = () => {
                 <span className="grid size-[22px] place-items-center rounded-md bg-white/5">
                   <EditOutlined />
                 </span>
-                <span className="text-[16px]">AI Creative Lab</span>
+                <span className="text-[16px]">AI 对话助手</span>
               </span>
               <span className="rounded-full bg-[linear-gradient(135deg,#6366f1_0%,#a855f7_100%)] px-2 py-[2px] text-[10px] font-bold text-white">
                 NEW
@@ -347,8 +348,8 @@ const HomePage = () => {
               </div>
             </section>
 
-            {/* Right Panel (placeholder - matches Figma layout) */}
-            <aside className="w-full shrink-0 md:w-[360px]">
+            {/* Right Panel: 转换设置 */}
+            <aside className="flex min-h-0 w-full shrink-0 flex-col md:w-[360px]">
               <div className="rounded-2xl border border-[#e2e8f0] bg-white p-5">
                 <div className="flex items-center justify-between">
                   <div className="text-[14px] font-bold text-[#0f172a]">{rightPanelSpec.title}</div>
@@ -469,6 +470,9 @@ const HomePage = () => {
           </div>
         </main>
       </div>
+
+      {/* 右下角悬浮 AI 助手（独立于布局） */}
+      <AiChatAssistant />
     </div>
   );
 };
