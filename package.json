@@ -2,6 +2,7 @@
   "name": "next-gif-to-webp",
   "version": "0.1.0",
   "private": true,
+  "type": "module",
   "scripts": {
     "dev": "next dev",
     "build": "next build",
@@ -17,9 +18,11 @@
     "form-data": "^4.0.5",
     "jszip": "^3.10.1",
     "next": "16.1.1",
+    "protobufjs": "^8.0.0",
     "react": "19.2.3",
     "react-dom": "19.2.3",
     "sharp": "^0.34.5",
+    "svgaplayerweb": "^2.3.2",
     "xlsx": "^0.18.5"
   },
   "devDependencies": {

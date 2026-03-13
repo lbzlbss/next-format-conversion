@@ -8,6 +8,7 @@ import {
   PictureOutlined,
   FileImageOutlined,
   EditOutlined,
+  PlayCircleOutlined,
   SettingOutlined,
   BellOutlined,
   QuestionCircleOutlined,
@@ -20,6 +21,8 @@ import ImageCompress from './components/ImageCompress';
 import GifCompress from './components/GifCompress';
 import ImageGenerate from './components/ImageGenerate';
 import AiChatAssistant from './components/AiChatAssistant';
+import SvgaTool from './components/SvgaTool';
+import { SvgaToolProvider, SvgaToolMain, SvgaToolEditPanel } from './components/SvgaToolInternal';
 
 const HomePage = () => {
   const [activeKey, setActiveKey] = useState('gifToWebp');
@@ -58,6 +61,7 @@ const HomePage = () => {
       { key: 'imageCompress', label: '图片压缩', icon: <FileImageOutlined />, Component: ImageCompress },
       { key: 'gifCompress', label: 'GIF 压缩', icon: <CompressOutlined />, Component: GifCompress },
       { key: 'imageGenerate', label: 'AI 图像生成', icon: <EditOutlined />, Component: ImageGenerate },
+      { key: 'svgaTool', label: 'SVGA 工具', icon: <PlayCircleOutlined />, Component: SvgaTool },
     ],
     []
   );
@@ -297,7 +301,7 @@ const HomePage = () => {
                 AR
               </div>
               <div className="min-w-0 flex-1">
-                <div className="truncate text-[14px] font-bold text-white">Alex Rivera</div>
+                <div className="truncate text-[14px] font-bold text-white">Tim</div>
                 <div className="truncate text-[12px] text-[#94a3b8]">Pro Member</div>
               </div>
               <button type="button" className="grid size-10 place-items-center rounded-xl text-[#94a3b8] hover:bg-white/5">
@@ -333,32 +337,60 @@ const HomePage = () => {
           </header>
 
           <div className="flex flex-1 flex-col gap-8 p-4 md:flex-row md:p-8">
-            {/* Content */}
-            <section className="min-w-0 flex-1">
-              <div className="rounded-2xl border border-[#e2e8f0] bg-white p-4 md:p-6">
-                <div className="mb-4 flex items-center justify-between gap-3">
-                  <div className="min-w-0">
-                    <div className="truncate text-[16px] font-semibold text-[#0f172a]">{active.label}</div>
-                    <div className="text-[12px] text-slate-500">在左侧切换工具，保留原功能，仅按设计稿换壳。</div>
+            {active.key === 'svgaTool' ? (
+              <SvgaToolProvider>
+                <section className="min-w-0 flex-1">
+                  <div className="rounded-2xl border border-[#e2e8f0] bg-white p-4 md:p-6">
+                    <div className="mb-4 flex items-center justify-between gap-3">
+                      <div className="min-w-0">
+                        <div className="truncate text-[16px] font-semibold text-[#0f172a]">{active.label}</div>
+                        <div className="text-[12px] text-slate-500">在左侧切换工具，保留原功能，仅按设计稿换壳。</div>
+                      </div>
+                    </div>
+                    <div className="min-w-0">
+                      <SvgaToolMain />
+                    </div>
                   </div>
-                </div>
-                <div className="min-w-0">
-                  <active.Component config={activeSettings} onConfigChange={updateActiveSettings} />
-                </div>
-              </div>
-            </section>
-
-            {/* Right Panel: 转换设置 */}
-            <aside className="flex min-h-0 w-full shrink-0 flex-col md:w-[360px]">
-              <div className="rounded-2xl border border-[#e2e8f0] bg-white p-5">
-                <div className="flex items-center justify-between">
-                  <div className="text-[14px] font-bold text-[#0f172a]">{rightPanelSpec.title}</div>
-                  <span className="text-slate-400">
-                    <SettingOutlined />
-                  </span>
-                </div>
-                <div className="mt-4 space-y-4 text-[12px] text-slate-600">
-                  {rightPanelSpec.fields.length === 0 ? (
+                </section>
+                <aside className="flex min-h-0 w-full shrink-0 flex-col md:w-[360px]">
+                  <div className="rounded-2xl border border-[#e2e8f0] bg-white p-5">
+                    <div className="flex items-center justify-between">
+                      <div className="text-[14px] font-bold text-[#0f172a]">{rightPanelSpec.title}</div>
+                      <span className="text-slate-400">
+                        <SettingOutlined />
+                      </span>
+                    </div>
+                    <div className="mt-4 min-h-0 flex-1 space-y-4 text-[12px] text-slate-600">
+                      <SvgaToolEditPanel />
+                    </div>
+                  </div>
+                </aside>
+              </SvgaToolProvider>
+            ) : (
+              <>
+                <section className="min-w-0 flex-1">
+                  <div className="rounded-2xl border border-[#e2e8f0] bg-white p-4 md:p-6">
+                    <div className="mb-4 flex items-center justify-between gap-3">
+                      <div className="min-w-0">
+                        <div className="truncate text-[16px] font-semibold text-[#0f172a]">{active.label}</div>
+                        <div className="text-[12px] text-slate-500">在左侧切换工具，保留原功能，仅按设计稿换壳。</div>
+                      </div>
+                    </div>
+                    <div className="min-w-0">
+                      <active.Component config={activeSettings} onConfigChange={updateActiveSettings} />
+                    </div>
+                  </div>
+                </section>
+                <aside className="flex min-h-0 w-full shrink-0 flex-col md:w-[360px]">
+                  <div className="rounded-2xl border border-[#e2e8f0] bg-white p-5">
+                    <div className="flex items-center justify-between">
+                      <div className="text-[14px] font-bold text-[#0f172a]">{rightPanelSpec.title}</div>
+                      <span className="text-slate-400">
+                        <SettingOutlined />
+                      </span>
+                    </div>
+                    <div className="mt-4 space-y-4 text-[12px] text-slate-600">
+                      {rightPanelSpec.fields.length === 0 ? (
                     <div className="rounded-2xl bg-[#eef2ff] p-4 text-[#4338ca]">
                       <div className="font-semibold">提示</div>
                       <div className="mt-1 text-[12px] leading-5">当前工具暂未配置右侧联动字段。</div>
@@ -467,6 +499,8 @@ const HomePage = () => {
                 </div>
               </div>
             </aside>
+              </>
+            )}
           </div>
         </main>
       </div>
