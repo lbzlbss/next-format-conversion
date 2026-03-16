@@ -230,7 +230,7 @@ const HomePage = () => {
 
   return (
     <div className="min-h-screen bg-[#f8fafd]">
-      <div className="mx-auto flex min-h-screen w-full max-w-[1440px]">
+      <div className="mx-auto flex min-h-screen w-full">
         {/* Left Sidebar */}
         <aside className="hidden w-[288px] shrink-0 flex-col border-r border-[#1e293b] bg-[#0f172a] md:flex">
           <div className="flex items-center gap-3 p-6">
