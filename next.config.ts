@@ -6,6 +6,15 @@ const nextConfig: NextConfig = {
     "https://nextformat.aiblank.top",
     "http://localhost:3000",
   ],
+  // Prevent webpack from bundling native binaries / CJS-only packages.
+  // They are accessed at runtime from node_modules instead.
+  serverExternalPackages: [
+    'ffmpeg-static',
+    'fluent-ffmpeg',
+    'sharp',
+    'protobufjs',
+    'jszip',
+  ],
   turbopack: {},
   experimental: {
     serverActions: {

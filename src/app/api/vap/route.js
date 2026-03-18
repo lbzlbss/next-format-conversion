@@ -6,10 +6,14 @@ import os from 'os';
 import { randomUUID } from 'crypto';
 import { inflateSync } from 'node:zlib';
 import { fileURLToPath } from 'node:url';
+import { createRequire } from 'node:module';
 import ffmpeg from 'fluent-ffmpeg';
 import sharp from 'sharp';
 import JSZip from 'jszip';
 import protobuf from 'protobufjs';
+
+// CJS require helper — needed for packages that don't ship ESM (e.g. ffmpeg-static)
+const _require = createRequire(import.meta.url);
 
 // ─── SVGA v2 protobuf setup (shared proto with /api/svga) ─────────────────────
 const SVGA_PROTO_PATH = fileURLToPath(new URL('../svga/svga.proto', import.meta.url));
@@ -26,17 +30,25 @@ async function getMovieEntityType() {
 }
 
 // ─── ffmpeg path ───────────────────────────────────────────────────────────────
-let ffmpegBin;
-if (process.env.NODE_ENV === 'production') {
-  ffmpegBin = '/usr/bin/ffmpeg';
-} else {
-  ffmpegBin = path.join(process.cwd(), 'public', 'ffmpeg', 'ffmpeg');
+// Priority: ffmpeg-static (bundled binary, works on Vercel) → system path
+let ffmpegBin = null;
+try {
+  // ffmpeg-static is a CJS module that exports the binary path as its default export
+  const ffmpegStatic = _require('ffmpeg-static');
+  const binPath = typeof ffmpegStatic === 'string' ? ffmpegStatic : ffmpegStatic?.default;
+  if (binPath && fs.existsSync(binPath)) ffmpegBin = binPath;
+} catch (_) {}
+
+if (!ffmpegBin) {
+  // Fall back to well-known system locations
+  for (const p of ['/usr/bin/ffmpeg', '/usr/local/bin/ffmpeg',
+                   path.join(process.cwd(), 'public', 'ffmpeg', 'ffmpeg')]) {
+    if (fs.existsSync(p)) { ffmpegBin = p; break; }
+  }
 }
-if (fs.existsSync(ffmpegBin)) {
+
+if (ffmpegBin) {
   ffmpeg.setFfmpegPath(ffmpegBin);
-} else {
-  const sys = '/usr/bin/ffmpeg';
-  if (fs.existsSync(sys)) ffmpeg.setFfmpegPath(sys);
 }
 
 const TMP = os.tmpdir();
