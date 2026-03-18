@@ -12,6 +12,7 @@ import {
   SettingOutlined,
   BellOutlined,
   QuestionCircleOutlined,
+  ThunderboltOutlined,
 } from '@ant-design/icons';
 import GifToWebp from './components/GifToWebp';
 import Mp4Compress from './components/Mp4Compress';
@@ -23,6 +24,7 @@ import ImageGenerate from './components/ImageGenerate';
 import AiChatAssistant from './components/AiChatAssistant';
 import SvgaTool from './components/SvgaTool';
 import { SvgaToolProvider, SvgaToolMain, SvgaToolEditPanel } from './components/SvgaToolInternal';
+import { VapProvider, VapMain, VapEditPanel } from './components/VapToolInternal';
 
 const HomePage = () => {
   const [activeKey, setActiveKey] = useState('gifToWebp');
@@ -62,6 +64,7 @@ const HomePage = () => {
       { key: 'gifCompress', label: 'GIF 压缩', icon: <CompressOutlined />, Component: GifCompress },
       { key: 'imageGenerate', label: 'AI 图像生成', icon: <EditOutlined />, Component: ImageGenerate },
       { key: 'svgaTool', label: 'SVGA 工具', icon: <PlayCircleOutlined />, Component: SvgaTool },
+      { key: 'vapTool',  label: 'VAP 动效',  icon: <ThunderboltOutlined />, Component: null },
     ],
     []
   );
@@ -366,6 +369,35 @@ const HomePage = () => {
                   </div>
                 </aside>
               </SvgaToolProvider>
+            ) : active.key === 'vapTool' ? (
+              <VapProvider>
+                <section className="min-w-0 flex-1">
+                  <div className="rounded-2xl border border-[#e2e8f0] bg-white p-4 md:p-6">
+                    <div className="mb-4 flex items-center justify-between gap-3">
+                      <div className="min-w-0">
+                        <div className="truncate text-[16px] font-semibold text-[#0f172a]">{active.label}</div>
+                        <div className="text-[12px] text-slate-500">上传 VAP 文件预览 alpha 动效，支持缩放导出与格式转换。</div>
+                      </div>
+                    </div>
+                    <div className="min-w-0">
+                      <VapMain />
+                    </div>
+                  </div>
+                </section>
+                <aside className="flex min-h-0 w-full shrink-0 flex-col md:w-[360px]">
+                  <div className="rounded-2xl border border-[#e2e8f0] bg-white p-5">
+                    <div className="flex items-center justify-between">
+                      <div className="text-[14px] font-bold text-[#0f172a]">VAP 配置 & 导出</div>
+                      <span className="text-slate-400">
+                        <SettingOutlined />
+                      </span>
+                    </div>
+                    <div className="mt-4 min-h-0 flex-1 space-y-4 text-[12px] text-slate-600">
+                      <VapEditPanel />
+                    </div>
+                  </div>
+                </aside>
+              </VapProvider>
             ) : (
               <>
                 <section className="min-w-0 flex-1">

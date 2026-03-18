@@ -58,22 +58,34 @@ function SvgaToolProvider({ children }) {
     if (typeof window !== 'undefined') {
       try {
         // 使用动态 import 加载，避免 Turbopack 静态分析
-        import('svgaplayerweb')
-          .then((m) => {
+        // svgaplayerweb checks for global JSZip / JSZipUtils to decide
+        // whether to use the ZIP-aware path (needed for SVGA v1 files).
+        // We polyfill both globals before the module is used.
+        Promise.all([
+          import('svgaplayerweb'),
+          import('jszip'),
+        ]).then(([m, JszipModule]) => {
             if (cancelled) return;
-            console.log('Loaded SVGA module:', m);
+
+            // Expose JSZip globally so svgaplayerweb can parse ZIP-based (v1) SVGA files
+            if (typeof window.JSZip === 'undefined') {
+              window.JSZip = JszipModule.default ?? JszipModule;
+            }
+            // Minimal JSZipUtils polyfill — getBinaryContent is used for string URLs
+            if (typeof window.JSZipUtils === 'undefined') {
+              window.JSZipUtils = {
+                getBinaryContent: (url, cb) => {
+                  fetch(url)
+                    .then((r) => r.arrayBuffer())
+                    .then((buf) => cb(null, buf))
+                    .catch((err) => cb(err));
+                },
+              };
+            }
+
             // 尝试不同的解析方式
             const NS = m?.default?.default ?? m?.default ?? m;
-            console.log('Parsed SVGA object:', NS);
             if (!NS?.Player || !NS?.Parser) {
-              console.error('SVGA module structure:', {
-                hasDefault: !!m.default,
-                hasDefaultDefault: !!m.default?.default,
-                hasPlayer: !!NS?.Player,
-                hasParser: !!NS?.Parser,
-                moduleKeys: Object.keys(m),
-                defaultKeys: m.default ? Object.keys(m.default) : []
-              });
               setError(new Error('SVGA 模块中未找到 Player/Parser'));
               return;
             }
@@ -168,6 +180,8 @@ function SvgaToolProvider({ children }) {
       return;
     }
 
+    // Keep an objectUrl for canvas display; the parser receives the File directly
+    // so svgaplayerweb takes the ZIP-aware path (supports both v1 ZIP and v2 binary).
     if (objectUrl) URL.revokeObjectURL(objectUrl);
     const url = URL.createObjectURL(file);
     setObjectUrl(url);
@@ -186,8 +200,10 @@ function SvgaToolProvider({ children }) {
     setReplaceKey('');
 
     try {
+      // Pass the File object (not the blob URL) — triggers the "[object File]" branch in
+      // svgaplayerweb which checks the PK header and handles both v1 (ZIP) and v2 (protobuf).
       parser.load(
-        url,
+        file,
         (videoItem) => {
           videoItemRef.current = videoItem;
           player.setVideoItem(videoItem);
