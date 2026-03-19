@@ -33,225 +33,351 @@ import {
   RetweetOutlined,
 } from '@ant-design/icons';
 
-// ─── WebGL shader source ───────────────────────────────────────────────────────
-const VS_SRC = `
-  attribute vec2 a_pos;
-  attribute vec2 a_uv;
-  varying vec2 v_uv;
-  void main() {
-    gl_Position = vec4(a_pos, 0.0, 1.0);
-    v_uv = a_uv;
-  }
-`;
-
-// Fragment shader: sample rgb area and alpha area from the same video texture.
-// u_useAlpha = 1.0 → composite alpha channel; 0.0 → fully opaque (no vapc).
-const FS_SRC = `
-  precision mediump float;
-  uniform sampler2D u_tex;
-  uniform vec2 u_videoSize;
-  uniform vec4 u_rgb;      // x, y, w, h in pixels
-  uniform vec4 u_alpha;    // x, y, w, h in pixels
-  uniform float u_useAlpha; // 1.0 = composite alpha, 0.0 = fully opaque
-  varying vec2 v_uv;
-  void main() {
-    vec2 rgbUv = vec2(
-      (u_rgb.x + v_uv.x * u_rgb.z) / u_videoSize.x,
-      (u_rgb.y + v_uv.y * u_rgb.w) / u_videoSize.y
-    );
-    vec2 alphaUv = vec2(
-      (u_alpha.x + v_uv.x * u_alpha.z) / u_videoSize.x,
-      (u_alpha.y + v_uv.y * u_alpha.w) / u_videoSize.y
-    );
-    vec4 rgb = texture2D(u_tex, rgbUv);
-    vec4 a   = texture2D(u_tex, alphaUv);
-    float alpha = mix(1.0, a.r, u_useAlpha);
-    gl_FragColor = vec4(rgb.rgb, alpha);
-  }
-`;
-
-function compileShader(gl, type, src) {
-  const s = gl.createShader(type);
-  gl.shaderSource(s, src);
-  gl.compileShader(s);
-  return s;
-}
-
-// ─── useVapPlayer hook ─────────────────────────────────────────────────────────
-function useVapPlayer(canvasRef) {
-  const glRef      = useRef(null);
-  const progRef    = useRef(null);
-  const texRef     = useRef(null);
-  const videoRef   = useRef(null);
+// ─── useVapCanvasPlayer hook (2D canvas compositing) ───────────────────────────
+function useVapCanvasPlayer(videoElRef, beforeCanvasRef, canvasRef) {
   const rafRef     = useRef(null);
   const configRef  = useRef(null);
+  const offRgbRef  = useRef(null);
+  const offARef    = useRef(null);
+  const beforeModeRef = useRef('raw'); // 'raw' | 'rgb'
+  const cleanupRef = useRef(null);
+  const didSeekRef = useRef(false);
 
   const [playing, setPlaying]   = useState(false);
   const [duration, setDuration] = useState(0);
   const [currentTime, setCurrentTime] = useState(0);
   const [hasAlpha, setHasAlpha] = useState(false);
+  const [canPlay, setCanPlay] = useState(false);
+  const [debug, setDebug] = useState({
+    readyState: 0,
+    networkState: 0,
+    paused: true,
+    ended: false,
+    error: null,
+    lastEvent: '',
+  });
 
-  const initGL = useCallback((canvas) => {
-    const gl = canvas.getContext('webgl', { alpha: true, premultipliedAlpha: false });
-    if (!gl) return;
-
-    const prog = gl.createProgram();
-    gl.attachShader(prog, compileShader(gl, gl.VERTEX_SHADER,   VS_SRC));
-    gl.attachShader(prog, compileShader(gl, gl.FRAGMENT_SHADER, FS_SRC));
-    gl.linkProgram(prog);
-    gl.useProgram(prog);
-
-    // Full-screen quad: two triangles as TRIANGLE_STRIP
-    const posBuf = gl.createBuffer();
-    gl.bindBuffer(gl.ARRAY_BUFFER, posBuf);
-    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1,-1, 1,-1, -1,1, 1,1]), gl.STATIC_DRAW);
-    const aPos = gl.getAttribLocation(prog, 'a_pos');
-    gl.enableVertexAttribArray(aPos);
-    gl.vertexAttribPointer(aPos, 2, gl.FLOAT, false, 0, 0);
-
-    const uvBuf = gl.createBuffer();
-    gl.bindBuffer(gl.ARRAY_BUFFER, uvBuf);
-    // UV flipped on Y for WebGL texture orientation
-    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([0,1, 1,1, 0,0, 1,0]), gl.STATIC_DRAW);
-    const aUv = gl.getAttribLocation(prog, 'a_uv');
-    gl.enableVertexAttribArray(aUv);
-    gl.vertexAttribPointer(aUv, 2, gl.FLOAT, false, 0, 0);
-
-    const tex = gl.createTexture();
-    gl.bindTexture(gl.TEXTURE_2D, tex);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
-
-    gl.enable(gl.BLEND);
-    gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
-
-    glRef.current   = gl;
-    progRef.current = prog;
-    texRef.current  = tex;
+  const ensureOffscreen = useCallback((w, h) => {
+    if (!offRgbRef.current) offRgbRef.current = document.createElement('canvas');
+    if (!offARef.current) offARef.current = document.createElement('canvas');
+    const rgbC = offRgbRef.current;
+    const aC = offARef.current;
+    if (rgbC.width !== w || rgbC.height !== h) {
+      rgbC.width = w;
+      rgbC.height = h;
+    }
+    if (aC.width !== w || aC.height !== h) {
+      aC.width = w;
+      aC.height = h;
+    }
+    return { rgbC, aC };
   }, []);
 
-  const drawFrame = useCallback((video) => {
-    const gl = glRef.current;
-    if (!gl) return;
+  const drawFrame2d = useCallback(() => {
+    const video = videoElRef.current;
+    const canvas = canvasRef.current;
+    if (!video || !canvas) return;
+    if (video.readyState < 2) return;
 
     const vw = video.videoWidth;
     const vh = video.videoHeight;
     if (!vw || !vh) return;
 
-    const cfg  = configRef.current;
+    const cfg = configRef.current;
     const info = cfg?.info;
 
-    // Resolve layout — fall back to full-frame when no vapc info
-    let rl, al, dw, dh, videoW, videoH, useAlpha;
-    if (info?.rgbLayout && info?.aLayout) {
-      rl      = info.rgbLayout;
-      al      = info.aLayout;
-      dw      = info.w      || vw;
-      dh      = info.h      || vh;
-      videoW  = info.videoW || vw;
-      videoH  = info.videoH || vh;
-      useAlpha = 1.0;
+    const normRect = (r) => {
+      if (!r) return null;
+      // Support array form: [x, y, w, h]
+      if (Array.isArray(r) && r.length >= 4) {
+        const x = Number(r[0] ?? 0);
+        const y = Number(r[1] ?? 0);
+        const w = Number(r[2] ?? 0);
+        const h = Number(r[3] ?? 0);
+        if (!Number.isFinite(x) || !Number.isFinite(y) || !Number.isFinite(w) || !Number.isFinite(h)) return null;
+        return { x, y, w, h };
+      }
+      const x = Number(r.x ?? 0);
+      const y = Number(r.y ?? 0);
+      const w = Number(r.w ?? r.width ?? 0);
+      const h = Number(r.h ?? r.height ?? 0);
+      if (!Number.isFinite(x) || !Number.isFinite(y) || !Number.isFinite(w) || !Number.isFinite(h)) return null;
+      return { x, y, w, h };
+    };
+
+    const normInfoWH = (v, fallback) => {
+      const n = Number(v);
+      return Number.isFinite(n) && n > 0 ? n : fallback;
+    };
+
+    // Resolve output size and layout
+    const videoW = normInfoWH(info?.videoW, vw);
+    const videoH = normInfoWH(info?.videoH, vh);
+    const displayW = normInfoWH(info?.w, Math.floor(videoW / 2));
+    const displayH = normInfoWH(info?.h, videoH);
+
+    const rl0 = normRect(info?.rgbLayout ?? info?.rgbFrame);
+    const al0 = normRect(info?.aLayout ?? info?.aFrame);
+    const halfW = Math.floor(videoW / 2);
+    const rl = rl0 ?? { x: 0, y: 0, w: halfW, h: videoH };
+    const al = al0 ?? { x: halfW, y: 0, w: halfW, h: videoH };
+    const hasVapcLayout = !!(rl && al);
+
+    const outW = hasVapcLayout ? displayW : vw;
+    const outH = hasVapcLayout ? displayH : vh;
+
+    // 1) 合成后（canvasRef）：无 vapc 就直接画原始帧；有 vapc 就合成 RGBA
+    if (canvas.width !== outW || canvas.height !== outH) {
+      canvas.width = outW;
+      canvas.height = outH;
+    }
+    const ctx = canvas.getContext('2d', { alpha: true, willReadFrequently: true });
+    if (!ctx) return;
+    ctx.clearRect(0, 0, outW, outH);
+
+    if (!hasVapcLayout) {
+      ctx.drawImage(video, 0, 0, vw, vh, 0, 0, outW, outH);
     } else {
-      // No vapc: render the full frame without alpha compositing
-      dw = vw; dh = vh; videoW = vw; videoH = vh;
-      rl = { x: 0, y: 0, w: vw, h: vh };
-      al = { x: 0, y: 0, w: vw, h: vh };
-      useAlpha = 0.0;
+      const { rgbC, aC } = ensureOffscreen(outW, outH);
+      const rgbCtx = rgbC.getContext('2d', { alpha: true, willReadFrequently: true });
+      const aCtx = aC.getContext('2d', { alpha: true, willReadFrequently: true });
+      if (!rgbCtx || !aCtx) return;
+
+      rgbCtx.clearRect(0, 0, outW, outH);
+      aCtx.clearRect(0, 0, outW, outH);
+      rgbCtx.drawImage(video, rl.x, rl.y, rl.w, rl.h, 0, 0, outW, outH);
+      aCtx.drawImage(video, al.x, al.y, al.w, al.h, 0, 0, outW, outH);
+
+      const rgbImg = rgbCtx.getImageData(0, 0, outW, outH);
+      const aImg = aCtx.getImageData(0, 0, outW, outH);
+      const rgbData = rgbImg.data;
+      const aData = aImg.data;
+      for (let i = 0; i < rgbData.length; i += 4) {
+        rgbData[i + 3] = aData[i]; // grayscale alpha in R channel
+      }
+      ctx.putImageData(rgbImg, 0, 0);
     }
 
-    // Resize canvas only when dimensions change
-    if (gl.canvas.width !== dw || gl.canvas.height !== dh) {
-      gl.canvas.width  = dw;
-      gl.canvas.height = dh;
-      gl.viewport(0, 0, dw, dh);
+    // 2) 合成前仅 RGB（beforeCanvasRef）：当 mode=rgb 且 vapc layout 存在时绘制
+    const beforeMode = beforeModeRef.current;
+    const beforeCanvas = beforeCanvasRef.current;
+    if (beforeCanvas && beforeMode === 'rgb' && hasVapcLayout) {
+      if (beforeCanvas.width !== outW || beforeCanvas.height !== outH) {
+        beforeCanvas.width = outW;
+        beforeCanvas.height = outH;
+      }
+      const bctx = beforeCanvas.getContext('2d', { alpha: true });
+      if (!bctx) return;
+      bctx.clearRect(0, 0, outW, outH);
+      bctx.drawImage(video, rl.x, rl.y, rl.w, rl.h, 0, 0, outW, outH);
     }
-
-    gl.clearColor(0, 0, 0, 0);
-    gl.clear(gl.COLOR_BUFFER_BIT);
-
-    gl.bindTexture(gl.TEXTURE_2D, texRef.current);
-    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, video);
-
-    const prog = progRef.current;
-    gl.uniform2f(gl.getUniformLocation(prog, 'u_videoSize'), videoW, videoH);
-    gl.uniform4f(gl.getUniformLocation(prog, 'u_rgb'),   rl.x, rl.y, rl.w, rl.h);
-    gl.uniform4f(gl.getUniformLocation(prog, 'u_alpha'), al.x, al.y, al.w, al.h);
-    gl.uniform1f(gl.getUniformLocation(prog, 'u_useAlpha'), useAlpha);
-
-    gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
-  }, []);
+  }, [canvasRef, ensureOffscreen, videoElRef]);
 
   const animLoop = useCallback(() => {
-    const v = videoRef.current;
-    // Draw whenever the video has data — covers paused first-frame and playback
-    if (v && v.readyState >= 2) {
-      drawFrame(v);
-    }
+    drawFrame2d();
     rafRef.current = requestAnimationFrame(animLoop);
-  }, [drawFrame]);
+  }, [drawFrame2d]);
 
   const load = useCallback((srcUrl, config) => {
-    // Cleanup previous
-    if (rafRef.current) cancelAnimationFrame(rafRef.current);
-    if (videoRef.current) {
-      videoRef.current.pause();
-      videoRef.current.src = '';
+    // cleanup previous listeners
+    if (cleanupRef.current) {
+      try { cleanupRef.current(); } catch (_) {}
+      cleanupRef.current = null;
     }
+    if (rafRef.current) cancelAnimationFrame(rafRef.current);
     setPlaying(false);
+    setCanPlay(false);
+    didSeekRef.current = false;
 
     configRef.current = config;
     const info = config?.info ?? {};
-    setHasAlpha(!!(info.aLayout && info.rgbLayout));
+    setHasAlpha(!!((info.aLayout && info.rgbLayout) || (info.aFrame && info.rgbFrame)));
 
-    const vid = document.createElement('video');
-    vid.src         = srcUrl;
-    vid.loop        = true;
-    vid.muted       = true;
+    const vid = videoElRef.current;
+    if (!vid) return;
+
+    // Attach src to the visible <video> element
+    if (vid.src !== srcUrl) vid.src = srcUrl;
+    vid.loop = true;
+    vid.muted = true;
     vid.playsInline = true;
     vid.crossOrigin = 'anonymous';
-    // Seek to frame 0 so the first frame is available immediately
-    vid.currentTime = 0;
-    videoRef.current = vid;
+    vid.preload = 'auto';
 
-    const tryInitGL = () => {
-      const canvas = canvasRef.current;
-      if (canvas && !glRef.current) {
-        initGL(canvas);
+    setDebug((d) => ({
+      ...d,
+      readyState: vid.readyState,
+      networkState: vid.networkState,
+      paused: vid.paused,
+      ended: vid.ended,
+      error: vid.error ? { code: vid.error.code, message: vid.error.message } : null,
+      lastEvent: 'load()',
+    }));
+
+    // Ensure the new src is actually loaded (esp. on Safari / after src switch)
+    try {
+      vid.load();
+    } catch (_) {}
+
+    const onLoadedMeta = () => setDuration(Number.isFinite(vid.duration) ? vid.duration : 0);
+    const onCanPlay = () => {
+      setCanPlay(true);
+      // Only seek once after a fresh load; repeated canplay during playback would rewind.
+      if (!didSeekRef.current) {
+        didSeekRef.current = true;
+        try {
+          vid.currentTime = 0;
+        } catch (_) {}
+      }
+      drawFrame2d();
+    };
+    const onTimeUpdate = () => setCurrentTime(vid.currentTime);
+    const onEnded = () => setPlaying(false);
+    const onPlay = () => setPlaying(true);
+    const onPause = () => setPlaying(false);
+    const onError = () => {
+      setCanPlay(false);
+      setDebug({
+        readyState: vid.readyState,
+        networkState: vid.networkState,
+        paused: vid.paused,
+        ended: vid.ended,
+        error: vid.error ? { code: vid.error.code, message: vid.error.message } : null,
+        lastEvent: 'error',
+      });
+    };
+    const mkDebugEvent = (name) => () => {
+      setDebug({
+        readyState: vid.readyState,
+        networkState: vid.networkState,
+        paused: vid.paused,
+        ended: vid.ended,
+        error: vid.error ? { code: vid.error.code, message: vid.error.message } : null,
+        lastEvent: name,
+      });
+    };
+    const onWaiting = mkDebugEvent('waiting');
+    const onStalled = mkDebugEvent('stalled');
+    const onSuspend = mkDebugEvent('suspend');
+    const onLoadedData = () => {
+      // loadeddata implies HAVE_CURRENT_DATA
+      setCanPlay(vid.readyState >= 2);
+    };
+    const onCanPlayThrough = () => {
+      setCanPlay(true);
+    };
+
+    vid.addEventListener('loadedmetadata', onLoadedMeta);
+    vid.addEventListener('canplay', onCanPlay);
+    vid.addEventListener('timeupdate', onTimeUpdate);
+    vid.addEventListener('ended', onEnded);
+    vid.addEventListener('play', onPlay);
+    vid.addEventListener('pause', onPause);
+    vid.addEventListener('error', onError);
+    vid.addEventListener('waiting', onWaiting);
+    vid.addEventListener('stalled', onStalled);
+    vid.addEventListener('suspend', onSuspend);
+    vid.addEventListener('loadeddata', onLoadedData);
+    vid.addEventListener('canplaythrough', onCanPlayThrough);
+
+    rafRef.current = requestAnimationFrame(animLoop);
+
+    // Cleanup listeners on next load
+    cleanupRef.current = () => {
+      vid.removeEventListener('loadedmetadata', onLoadedMeta);
+      vid.removeEventListener('canplay', onCanPlay);
+      vid.removeEventListener('timeupdate', onTimeUpdate);
+      vid.removeEventListener('ended', onEnded);
+      vid.removeEventListener('play', onPlay);
+      vid.removeEventListener('pause', onPause);
+      vid.removeEventListener('error', onError);
+      vid.removeEventListener('waiting', onWaiting);
+      vid.removeEventListener('stalled', onStalled);
+      vid.removeEventListener('suspend', onSuspend);
+      vid.removeEventListener('loadeddata', onLoadedData);
+      vid.removeEventListener('canplaythrough', onCanPlayThrough);
+    };
+  }, [animLoop, drawFrame2d, videoElRef]);
+
+  const play = useCallback(() => {
+    const v = videoElRef.current;
+    if (!v) return;
+    if (!v.src) {
+      message.warning('视频未加载完成，请重新上传或稍等');
+      return;
+    }
+    if (v.readyState < 2) {
+      // Not ready yet — UI will show disabled, but keep a safe guard here.
+      return;
+    }
+
+    const doPlay = () => {
+      try {
+        const p = v.play();
+        if (p && typeof p.then === 'function') {
+          p.catch((e) => {
+            console.error('[vap player] video.play() failed', e);
+            message.error(`播放失败：${e?.message || e || 'unknown error'}`);
+          });
+        }
+      } catch (e) {
+        console.error('[vap player] video.play() threw', e);
+        message.error(`播放失败：${e?.message || e || 'unknown error'}`);
       }
     };
 
-    vid.addEventListener('loadedmetadata', () => {
-      setDuration(vid.duration);
-      tryInitGL();
-    });
+    // If not ready, wait for canplay once, then play.
+    if (v.readyState < 2) {
+      const onReadyOnce = () => {
+        v.removeEventListener('canplay', onReadyOnce);
+        v.removeEventListener('canplaythrough', onReadyOnce);
+        doPlay();
+      };
+      // Some browsers may fire canplaythrough without firing canplay reliably
+      v.addEventListener('canplay', onReadyOnce);
+      v.addEventListener('canplaythrough', onReadyOnce);
+      try {
+        v.load();
+      } catch (_) {}
+      return;
+    }
 
-    // canLoadThrough fires later — ensures first frame pixel data is available
-    vid.addEventListener('canplay', () => {
-      tryInitGL();
-      // Force one draw of the first frame even while paused
-      if (videoRef.current) drawFrame(videoRef.current);
-    });
+    doPlay();
+  }, [videoElRef]);
 
-    vid.addEventListener('timeupdate', () => setCurrentTime(vid.currentTime));
-    vid.addEventListener('ended', () => setPlaying(false));
+  const pause = useCallback(() => {
+    const v = videoElRef.current;
+    if (!v) return;
+    v.pause();
+    setPlaying(false);
+  }, [videoElRef]);
 
-    // Start animation loop — it will draw as soon as readyState >= 2
-    rafRef.current = requestAnimationFrame(animLoop);
-  }, [canvasRef, initGL, animLoop, drawFrame]);
-
-  const play  = useCallback(() => { videoRef.current?.play();  setPlaying(true);  }, []);
-  const pause = useCallback(() => { videoRef.current?.pause(); setPlaying(false); }, []);
-  const seekTo = useCallback((t) => { if (videoRef.current) videoRef.current.currentTime = t; }, []);
+  const seekTo = useCallback((t) => {
+    const v = videoElRef.current;
+    if (!v) return;
+    v.currentTime = t;
+    drawFrame2d();
+  }, [drawFrame2d, videoElRef]);
 
   const destroy = useCallback(() => {
     if (rafRef.current) cancelAnimationFrame(rafRef.current);
-    if (videoRef.current) { videoRef.current.pause(); videoRef.current.src = ''; }
+    if (cleanupRef.current) {
+      try { cleanupRef.current(); } catch (_) {}
+      cleanupRef.current = null;
+    }
+    const v = videoElRef.current;
+    if (v) {
+      v.pause();
+      v.src = '';
+    }
     setPlaying(false);
+  }, [videoElRef]);
+
+  const setBeforeMode = useCallback((mode) => {
+    beforeModeRef.current = mode === 'rgb' ? 'rgb' : 'raw';
   }, []);
 
-  return { playing, duration, currentTime, hasAlpha, load, play, pause, seekTo, destroy };
+  return { playing, duration, currentTime, hasAlpha, canPlay, debug, load, play, pause, seekTo, destroy, setBeforeMode };
 }
 
 // ─── Context ───────────────────────────────────────────────────────────────────
@@ -260,7 +386,9 @@ const VapContext = createContext(null);
 // ─── VapProvider ───────────────────────────────────────────────────────────────
 export function VapProvider({ children }) {
   const canvasRef = useRef(null);
-  const player    = useVapPlayer(canvasRef);
+  const videoRef = useRef(null);
+  const beforeCanvasRef = useRef(null);
+  const player    = useVapCanvasPlayer(videoRef, beforeCanvasRef, canvasRef);
 
   const [vapFile,    setVapFile]    = useState(null);   // File object
   const [vapUrl,     setVapUrl]     = useState(null);   // object URL
@@ -301,19 +429,16 @@ export function VapProvider({ children }) {
       const json = await res.json();
       if (json.config) {
         setVapConfig(json.config);
-        player.load(url, json.config);
       } else {
         // No vapc — still load video for preview
         message.warning(json.error || '无法解析 vapc 配置，将以原始视频模式预览');
-        player.load(url, null);
       }
     } catch (e) {
       message.error('解析 VAP 失败: ' + e.message);
-      player.load(url, null);
     } finally {
       setLoadingInfo(false);
     }
-  }, [vapUrl, player]);
+  }, [vapUrl]);
 
   const handleExport = useCallback(async () => {
     if (!vapFile) return message.warning('请先上传 VAP 文件');
@@ -381,7 +506,7 @@ export function VapProvider({ children }) {
   }, [svgaFile, svgaScaleX, svgaScaleY, svgaFps]);
 
   const value = useMemo(() => ({
-    canvasRef, player,
+    canvasRef, beforeCanvasRef, videoRef, player,
     vapFile, vapUrl, vapConfig,
     loadingInfo, processing,
     action, setAction,
@@ -396,7 +521,7 @@ export function VapProvider({ children }) {
     svgaScaleY, setSvgaScaleY,
     handleFile, handleExport, handleSvgaToVap,
   }), [
-    canvasRef, player,
+    canvasRef, beforeCanvasRef, videoRef, player,
     vapFile, vapUrl, vapConfig,
     loadingInfo, processing,
     action,
@@ -419,12 +544,53 @@ export function VapProvider({ children }) {
 // ─── VapMain ───────────────────────────────────────────────────────────────────
 export function VapMain() {
   const {
-    canvasRef, player,
+    canvasRef, beforeCanvasRef, videoRef, player,
     vapFile, vapUrl, vapConfig,
     loadingInfo, handleFile,
   } = useContext(VapContext);
 
-  const { playing, duration, currentTime, hasAlpha, play, pause } = player;
+  const { playing, duration, currentTime, hasAlpha, canPlay, play, pause, load, setBeforeMode } = player;
+  const [showRgbOnly, setShowRgbOnly] = useState(false);
+  const [debugBottom, setDebugBottom] = useState({
+    readyState: 0,
+    networkState: 0,
+    paused: true,
+    ended: false,
+    currentTime: 0,
+    duration: 0,
+    error: null,
+  });
+
+  useEffect(() => {
+    setBeforeMode(showRgbOnly ? 'rgb' : 'raw');
+  }, [setBeforeMode, showRgbOnly]);
+
+  // IMPORTANT: load the video AFTER <video> mounts, otherwise videoRef.current is null
+  useEffect(() => {
+    if (!vapUrl) return;
+    load(vapUrl, vapConfig);
+  }, [load, vapConfig, vapUrl]);
+
+  // Bottom debug info (low-frequency snapshot; avoids UI flicker)
+  useEffect(() => {
+    if (!vapUrl) return;
+    const tick = () => {
+      const v = videoRef.current;
+      if (!v) return;
+      setDebugBottom({
+        readyState: v.readyState,
+        networkState: v.networkState,
+        paused: v.paused,
+        ended: v.ended,
+        currentTime: Number.isFinite(v.currentTime) ? v.currentTime : 0,
+        duration: Number.isFinite(v.duration) ? v.duration : 0,
+        error: v.error ? { code: v.error.code, message: v.error.message } : null,
+      });
+    };
+    tick();
+    const id = window.setInterval(tick, 400);
+    return () => window.clearInterval(id);
+  }, [vapUrl, videoRef]);
 
   const beforeUpload = useCallback((file) => {
     handleFile(file);
@@ -436,6 +602,9 @@ export function VapMain() {
     const s = (t % 60).toFixed(1).padStart(4, '0');
     return `${m}:${s}`;
   };
+
+  const fmtReadyState = (v) => ['HAVE_NOTHING', 'HAVE_METADATA', 'HAVE_CURRENT_DATA', 'HAVE_FUTURE_DATA', 'HAVE_ENOUGH_DATA'][v] ?? String(v);
+  const fmtNetworkState = (v) => ['NETWORK_EMPTY', 'NETWORK_IDLE', 'NETWORK_LOADING', 'NETWORK_NO_SOURCE'][v] ?? String(v);
 
   const info = vapConfig?.info;
 
@@ -475,23 +644,65 @@ export function VapMain() {
         </div>
       )}
 
+      {/* Debug strip removed (was causing flicker) */}
+
       {/* Canvas preview — always rendered once vapUrl is set so canvasRef mounts */}
       {vapUrl && (
         <div className="flex flex-col items-center gap-3">
-          <div
-            className="relative overflow-hidden rounded-xl border border-slate-200"
-            style={{
-              // Only show checkerboard when alpha compositing is active
-              background: hasAlpha
-                ? 'repeating-conic-gradient(#e2e8f0 0% 25%, #f8fafd 0% 50%) 0 0 / 16px 16px'
-                : '#000',
-              maxWidth: '100%',
-            }}
-          >
-            <canvas
-              ref={canvasRef}
-              style={{ display: 'block', maxWidth: '100%', maxHeight: 480 }}
-            />
+          {/* Before/After preview */}
+          <div className="grid w-full grid-cols-1 gap-3 md:grid-cols-2">
+            {/* 合成前：原始视频（包含 RGB/Alpha 拼接布局） */}
+            <div className="flex flex-col gap-2">
+              <div className="flex items-center justify-between gap-2">
+                <div className="text-xs text-slate-500">
+                  合成前（{showRgbOnly ? '仅 RGB' : '原始视频'}）
+                </div>
+                <Button
+                  size="small"
+                  onClick={() => setShowRgbOnly((v) => !v)}
+                  disabled={!hasAlpha}
+                >
+                  {showRgbOnly ? '看原始视频' : '只看 RGB'}
+                </Button>
+              </div>
+              <div className="relative overflow-hidden rounded-xl border border-slate-200 bg-black">
+                <video
+                  ref={videoRef}
+                  style={{
+                    display: showRgbOnly ? 'none' : 'block',
+                    width: '100%',
+                    maxHeight: 360,
+                    objectFit: 'contain',
+                  }}
+                />
+                <canvas
+                  ref={beforeCanvasRef}
+                  style={{
+                    display: showRgbOnly ? 'block' : 'none',
+                    width: '100%',
+                    maxHeight: 360,
+                  }}
+                />
+              </div>
+            </div>
+
+            {/* 合成后：canvas 合成透明通道 */}
+            <div className="flex flex-col gap-2">
+              <div className="text-xs text-slate-500">合成后（Canvas 透明合成）</div>
+              <div
+                className="relative overflow-hidden rounded-xl border border-slate-200"
+                style={{
+                  background: hasAlpha
+                    ? 'repeating-conic-gradient(#e2e8f0 0% 25%, #f8fafd 0% 50%) 0 0 / 16px 16px'
+                    : '#000',
+                }}
+              >
+                <canvas
+                  ref={canvasRef}
+                  style={{ display: 'block', width: '100%', maxHeight: 360 }}
+                />
+              </div>
+            </div>
           </div>
 
           {/* Controls */}
@@ -501,7 +712,11 @@ export function VapMain() {
               shape="circle"
               icon={playing ? <PauseCircleOutlined /> : <PlayCircleOutlined />}
               onClick={playing ? pause : play}
+              disabled={!canPlay && !playing}
             />
+            {!canPlay && !playing && (
+              <span className="text-xs text-slate-400">加载中…</span>
+            )}
             <span className="text-sm tabular-nums text-slate-600">
               {fmtTime(currentTime)} / {fmtTime(duration)}
             </span>
@@ -513,6 +728,25 @@ export function VapMain() {
       {vapFile && (
         <div className="text-xs text-slate-400 text-center">
           {vapFile.name} — {(vapFile.size / 1024).toFixed(1)} KB
+        </div>
+      )}
+
+      {/* Debug at bottom */}
+      {vapUrl && (
+        <div className="mt-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600">
+          <div className="flex flex-wrap gap-x-3 gap-y-1 font-mono">
+            <span>readyState={fmtReadyState(debugBottom.readyState)}</span>
+            <span>networkState={fmtNetworkState(debugBottom.networkState)}</span>
+            <span>paused={String(debugBottom.paused)}</span>
+            <span>ended={String(debugBottom.ended)}</span>
+            <span>t={debugBottom.currentTime.toFixed(2)}/{debugBottom.duration.toFixed(2)}</span>
+            {debugBottom.error && (
+              <span className="text-red-600">error={String(debugBottom.error.code)} {debugBottom.error.message || ''}</span>
+            )}
+          </div>
+          {!canPlay && (
+            <div className="mt-1 text-slate-500">提示：需要等 readyState 到 HAVE_CURRENT_DATA 以上，播放键才可用。</div>
+          )}
         </div>
       )}
     </div>
@@ -577,7 +811,7 @@ export function VapEditPanel() {
           )}
         </Descriptions>
       ) : (
-        <Alert type="info" message="上传 VAP 文件后显示配置信息" showIcon />
+        <Alert type="info" title="上传 VAP 文件后显示配置信息" showIcon />
       ),
     },
     {
