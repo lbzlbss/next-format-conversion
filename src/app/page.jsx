@@ -25,6 +25,7 @@ import AiChatAssistant from './components/AiChatAssistant';
 import SvgaTool from './components/SvgaTool';
 import { SvgaToolProvider, SvgaToolMain, SvgaToolEditPanel } from './components/SvgaToolInternal';
 import { VapProvider, VapMain, VapEditPanel } from './components/VapToolInternal';
+import VideoWatermarkRemover from './components/VideoWatermarkRemover';
 
 const HomePage = () => {
   const [activeKey, setActiveKey] = useState('gifToWebp');
@@ -52,6 +53,7 @@ const HomePage = () => {
       lossy: true,
     },
     imageGenerate: {},
+    videoWatermark: {},
   }));
 
   const navItems = useMemo(
@@ -65,6 +67,7 @@ const HomePage = () => {
       { key: 'imageGenerate', label: 'AI 图像生成', icon: <EditOutlined />, Component: ImageGenerate },
       { key: 'svgaTool', label: 'SVGA 工具', icon: <PlayCircleOutlined />, Component: SvgaTool },
       { key: 'vapTool',  label: 'VAP 动效',  icon: <ThunderboltOutlined />, Component: null },
+      { key: 'videoWatermark', label: '视频去水印', icon: <EditOutlined />, Component: VideoWatermarkRemover },
     ],
     []
   );
