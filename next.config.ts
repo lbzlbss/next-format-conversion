@@ -18,9 +18,9 @@ const nextConfig: NextConfig = {
   turbopack: {},
   experimental: {
     serverActions: {
-      bodySizeLimit: "50mb",
+      bodySizeLimit: "300mb",
     },
-    proxyClientMaxBodySize: "50mb",
+    proxyClientMaxBodySize: "300mb",
   },
   async headers() {
     return [

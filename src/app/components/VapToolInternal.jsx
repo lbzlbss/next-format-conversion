@@ -789,7 +789,7 @@ export function VapEditPanel() {
     {
       key: 'info',
       label: <span><InfoCircleOutlined /> 文件信息</span>,
-      children: vapConfig ? (
+      children: vapConfig && info ? (
         <Descriptions column={1} size="small" bordered>
           <Descriptions.Item label="显示尺寸">{info.w} × {info.h}</Descriptions.Item>
           <Descriptions.Item label="视频尺寸">{info.videoW} × {info.videoH}</Descriptions.Item>
