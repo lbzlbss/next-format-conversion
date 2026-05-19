@@ -249,14 +249,14 @@ export default function VideoWatermarkRemover() {
             <Button icon={<ReloadOutlined />} onClick={resetMaskToBottomRight}>重置到右下角</Button>
             <Button onClick={addTrackAtCurrentTime}>按当前时间添加轨迹</Button>
             <Button onClick={() => setMaskTracks([])} disabled={maskTracks.length === 0}>清空轨迹</Button>
-            <div className="text-xs text-slate-500 self-center">
+            <div className="text-xs text-mf-muted self-center">
               视频尺寸: {videoMeta.width} x {videoMeta.height}
             </div>
           </div>
 
           {maskTracks.length > 0 && (
-            <div className="mt-3 space-y-2 rounded-lg border border-slate-200 p-3">
-              <div className="text-xs font-semibold text-slate-600">分时段轨迹（用于移动水印）</div>
+            <div className="mt-3 space-y-2 rounded-lg border border-mf-border p-3">
+              <div className="text-xs font-semibold text-mf-muted">分时段轨迹（用于移动水印）</div>
               {maskTracks.map((trk, idx) => (
                 <div key={`${idx}_${trk.start}_${trk.x}`} className="grid grid-cols-4 gap-2 md:grid-cols-8">
                   <InputNumber size="small" addonBefore="S" min={0} value={trk.start} onChange={(v) => setMaskTracks((prev) => prev.map((it, i) => i === idx ? { ...it, start: Number(v || 0) } : it))} />
@@ -288,7 +288,7 @@ export default function VideoWatermarkRemover() {
               <span>保留原音频</span>
               <Switch checked={keepAudio} onChange={setKeepAudio} />
             </div>
-            <div className="text-xs text-slate-500">
+            <div className="text-xs text-mf-muted">
               说明：当前版本在 Serverless 中使用 FFmpeg `delogo`，`useAI` 参数会透传，默认不启用独立 AI 服务。
             </div>
           </div>

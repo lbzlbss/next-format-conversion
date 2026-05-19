@@ -626,7 +626,7 @@ export function VapMain() {
 
       {/* Status */}
       {loadingInfo && (
-        <div className="flex items-center gap-2 text-sm text-slate-500">
+        <div className="flex items-center gap-2 text-sm text-mf-muted">
           <Spin size="small" /> 解析 vapc 配置中…
         </div>
       )}
@@ -636,7 +636,7 @@ export function VapMain() {
         <div className="flex flex-wrap gap-2">
           <Tag color="blue">{info.w} × {info.h}</Tag>
           <Tag color="geekblue">{info.videoW} × {info.videoH} raw</Tag>
-          <Tag color="purple">{info.f} fps</Tag>
+          <Tag color="green">{info.f} fps</Tag>
           {hasAlpha && <Tag color="green">Alpha ✓</Tag>}
           {info.sources?.length > 0 && (
             <Tag color="orange">融合动画 ({info.sources.length})</Tag>
@@ -654,7 +654,7 @@ export function VapMain() {
             {/* 合成前：原始视频（包含 RGB/Alpha 拼接布局） */}
             <div className="flex flex-col gap-2">
               <div className="flex items-center justify-between gap-2">
-                <div className="text-xs text-slate-500">
+                <div className="text-xs text-mf-muted">
                   合成前（{showRgbOnly ? '仅 RGB' : '原始视频'}）
                 </div>
                 <Button
@@ -665,7 +665,7 @@ export function VapMain() {
                   {showRgbOnly ? '看原始视频' : '只看 RGB'}
                 </Button>
               </div>
-              <div className="relative overflow-hidden rounded-xl border border-slate-200 bg-black">
+              <div className="relative overflow-hidden rounded-xl border border-mf-border bg-black">
                 <video
                   ref={videoRef}
                   style={{
@@ -688,9 +688,9 @@ export function VapMain() {
 
             {/* 合成后：canvas 合成透明通道 */}
             <div className="flex flex-col gap-2">
-              <div className="text-xs text-slate-500">合成后（Canvas 透明合成）</div>
+              <div className="text-xs text-mf-muted">合成后（Canvas 透明合成）</div>
               <div
-                className="relative overflow-hidden rounded-xl border border-slate-200"
+                className="relative overflow-hidden rounded-xl border border-mf-border"
                 style={{
                   background: hasAlpha
                     ? 'repeating-conic-gradient(#e2e8f0 0% 25%, #f8fafd 0% 50%) 0 0 / 16px 16px'
@@ -715,9 +715,9 @@ export function VapMain() {
               disabled={!canPlay && !playing}
             />
             {!canPlay && !playing && (
-              <span className="text-xs text-slate-400">加载中…</span>
+              <span className="text-xs text-mf-muted">加载中…</span>
             )}
-            <span className="text-sm tabular-nums text-slate-600">
+            <span className="text-sm tabular-nums text-mf-muted">
               {fmtTime(currentTime)} / {fmtTime(duration)}
             </span>
           </div>
@@ -726,14 +726,14 @@ export function VapMain() {
 
       {/* File name */}
       {vapFile && (
-        <div className="text-xs text-slate-400 text-center">
+        <div className="text-xs text-mf-muted text-center">
           {vapFile.name} — {(vapFile.size / 1024).toFixed(1)} KB
         </div>
       )}
 
       {/* Debug at bottom */}
       {vapUrl && (
-        <div className="mt-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600">
+        <div className="mt-2 rounded-lg border border-mf-border bg-mf-canvas px-3 py-2 text-xs text-mf-muted">
           <div className="flex flex-wrap gap-x-3 gap-y-1 font-mono">
             <span>readyState={fmtReadyState(debugBottom.readyState)}</span>
             <span>networkState={fmtNetworkState(debugBottom.networkState)}</span>
@@ -745,7 +745,7 @@ export function VapMain() {
             )}
           </div>
           {!canPlay && (
-            <div className="mt-1 text-slate-500">提示：需要等 readyState 到 HAVE_CURRENT_DATA 以上，播放键才可用。</div>
+            <div className="mt-1 text-mf-muted">提示：需要等 readyState 到 HAVE_CURRENT_DATA 以上，播放键才可用。</div>
           )}
         </div>
       )}
@@ -820,7 +820,7 @@ export function VapEditPanel() {
       children: (
         <div className="flex flex-col gap-4">
           <div>
-            <div className="mb-1 text-xs font-medium text-slate-500">操作类型</div>
+            <div className="mb-1 text-xs font-medium text-mf-muted">操作类型</div>
             <Select
               value={action}
               onChange={setAction}
@@ -836,8 +836,8 @@ export function VapEditPanel() {
             <>
               <div>
                 <div className="mb-2 flex items-center justify-between">
-                  <span className="text-xs font-medium text-slate-500">水平缩放比例</span>
-                  <span className="text-xs text-slate-400">{(scaleX * 100).toFixed(0)}%</span>
+                  <span className="text-xs font-medium text-mf-muted">水平缩放比例</span>
+                  <span className="text-xs text-mf-muted">{(scaleX * 100).toFixed(0)}%</span>
                 </div>
                 <Slider
                   min={0.1} max={4} step={0.05}
@@ -855,8 +855,8 @@ export function VapEditPanel() {
 
               <div>
                 <div className="mb-2 flex items-center justify-between">
-                  <span className="text-xs font-medium text-slate-500">垂直缩放比例</span>
-                  <span className="text-xs text-slate-400">{(scaleY * 100).toFixed(0)}%</span>
+                  <span className="text-xs font-medium text-mf-muted">垂直缩放比例</span>
+                  <span className="text-xs text-mf-muted">{(scaleY * 100).toFixed(0)}%</span>
                 </div>
                 <Slider
                   min={0.1} max={4} step={0.05}
@@ -879,7 +879,7 @@ export function VapEditPanel() {
                   checked={lockScale}
                   onChange={(e) => setLockScale(e.target.checked)}
                 />
-                <label htmlFor="lockScale" className="text-xs text-slate-500 cursor-pointer">
+                <label htmlFor="lockScale" className="text-xs text-mf-muted cursor-pointer">
                   等比缩放
                 </label>
               </div>
@@ -903,7 +903,7 @@ export function VapEditPanel() {
                 description="将从 VAP 视频中逐帧提取图像（含 alpha），并打包为 SVGA v1 格式。帧数越多导出越慢。"
               />
               <div>
-                <div className="mb-1 text-xs font-medium text-slate-500">最大帧数</div>
+                <div className="mb-1 text-xs font-medium text-mf-muted">最大帧数</div>
                 <Slider min={10} max={300} step={10} value={maxFrames} onChange={setMaxFrames} />
                 <InputNumber
                   min={10} max={300} step={10}
@@ -912,7 +912,7 @@ export function VapEditPanel() {
                 />
               </div>
               <div>
-                <div className="mb-1 text-xs font-medium text-slate-500">提取帧率</div>
+                <div className="mb-1 text-xs font-medium text-mf-muted">提取帧率</div>
                 <Select
                   value={extractFps}
                   onChange={setExtractFps}
@@ -956,7 +956,7 @@ export function VapEditPanel() {
 
           {/* SVGA Upload */}
           <div>
-            <div className="mb-1 text-xs font-medium text-slate-500">上传 SVGA 文件</div>
+            <div className="mb-1 text-xs font-medium text-mf-muted">上传 SVGA 文件</div>
             <Upload
               accept=".svga"
               showUploadList={false}
@@ -967,7 +967,7 @@ export function VapEditPanel() {
               </Button>
             </Upload>
             {svgaFile && (
-              <div className="mt-1 text-xs text-slate-400">
+              <div className="mt-1 text-xs text-mf-muted">
                 {svgaFile.name} — {(svgaFile.size / 1024).toFixed(1)} KB
               </div>
             )}
@@ -976,7 +976,7 @@ export function VapEditPanel() {
           {/* Scale */}
           <div className="flex gap-2">
             <div className="flex-1">
-              <div className="mb-1 text-xs font-medium text-slate-500">宽度缩放</div>
+              <div className="mb-1 text-xs font-medium text-mf-muted">宽度缩放</div>
               <InputNumber
                 min={0.1} max={4} step={0.1} precision={2}
                 value={svgaScaleX} onChange={setSvgaScaleX}
@@ -984,7 +984,7 @@ export function VapEditPanel() {
               />
             </div>
             <div className="flex-1">
-              <div className="mb-1 text-xs font-medium text-slate-500">高度缩放</div>
+              <div className="mb-1 text-xs font-medium text-mf-muted">高度缩放</div>
               <InputNumber
                 min={0.1} max={4} step={0.1} precision={2}
                 value={svgaScaleY} onChange={setSvgaScaleY}
@@ -995,7 +995,7 @@ export function VapEditPanel() {
 
           {/* FPS */}
           <div>
-            <div className="mb-1 text-xs font-medium text-slate-500">输出帧率</div>
+            <div className="mb-1 text-xs font-medium text-mf-muted">输出帧率</div>
             <Select
               value={svgaFps}
               onChange={setSvgaFps}

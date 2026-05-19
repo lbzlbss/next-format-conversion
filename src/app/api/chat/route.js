@@ -1,16 +1,18 @@
 import { NextResponse } from "next/server";
+import {
+  ARK_CHAT_URL,
+  ARK_CHAT_MODEL,
+  getChatApiKey,
+  getSiteName,
+} from "../_lib/ark.js";
+import {
+  searchWiki,
+  formatWikiContext,
+  chunksToSources,
+} from "../_lib/wiki/search.js";
 
-const ARK_CHAT_URL =
-  "https://ark.cn-beijing.volces.com/api/v3/chat/completions";
-const ARK_MODEL = "doubao-seed-2-0-lite-260215";
-
-/**
- * 精简 System Prompt，降低每轮请求的 token 消耗（完整规范见 skill.md）
- * 仅保留：身份、输出格式、约束、关键参数要点；去掉冗长示例与重复描述。
- * 若需更强一致性可改用完整 prompt，或接入「按意图注入片段」策略。
- */
 function buildSystemPrompt() {
-  const siteName = process.env.SITE_NAME || "MediaFlow";
+  const siteName = getSiteName();
   return `你是${siteName}助手，双重身份：①AI创作与视频转换专家 ②八字命理师。说话文雅、有逻辑。
 
 【AI/视频类】回答必须：1.简要说原理 2.步骤化(1.2.3.) 3.给具体参数或Prompt示例。关键词如 **ControlNet**、**Seed值**、**运动强度**、**重绘幅度** 加粗。视频参数：运动强度3-6人像/7-12空镜，重绘0.3-0.5保结构/0.75+改风格，FPS 24或30，结尾可加【技术总结】。
@@ -20,16 +22,18 @@ function buildSystemPrompt() {
 【约束】仅自称「${siteName}助手」；不违法；命理不预测生死/具体灾祸日期。`;
 }
 
+function sseEncode(event, data) {
+  return `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`;
+}
+
 /**
- * AI 对话助手 API（流式）
- * 请求体: { messages: [{ role: 'user' | 'assistant', content: string }] }
- * 返回: NDJSON 流 { "content": "..." } 与 { "done": true }
- * System Prompt 符合 skill.md「网站全能助手 + 命理大师 + 视频转换专家」规范
+ * AI 对话助手 API（SSE 流式 + Wiki RAG）
+ * 请求体: { messages, context?: { toolKey?, useWiki? } }
  */
 export async function POST(request) {
   try {
     const body = await request.json();
-    const { messages } = body || {};
+    const { messages, context } = body || {};
 
     if (!Array.isArray(messages) || messages.length === 0) {
       return NextResponse.json({ error: "messages 不能为空" }, { status: 400 });
@@ -44,7 +48,7 @@ export async function POST(request) {
       );
     }
 
-    const apiKey = process.env.ARK_API_KEY2;
+    const apiKey = getChatApiKey();
     if (!apiKey) {
       return NextResponse.json(
         { error: "ARK_API_KEY2 未设置，请在 .env 中配置" },
@@ -52,7 +56,18 @@ export async function POST(request) {
       );
     }
 
-    const systemPrompt = buildSystemPrompt();
+    const useWiki = context?.useWiki !== false;
+    const toolKey = context?.toolKey || null;
+    const { chunks: wikiChunks } = await searchWiki(userContent, {
+      limit: 3,
+      toolKey,
+      useWiki,
+    });
+
+    const wikiBlock = formatWikiContext(wikiChunks);
+    const sources = chunksToSources(wikiChunks);
+    const systemPrompt = buildSystemPrompt() + wikiBlock;
+
     const arkMessages = [
       { role: "system", content: systemPrompt },
       ...messages.map((m) => ({ role: m.role, content: m.content })),
@@ -65,7 +80,7 @@ export async function POST(request) {
         Authorization: `Bearer ${apiKey}`,
       },
       body: JSON.stringify({
-        model: ARK_MODEL,
+        model: ARK_CHAT_MODEL,
         messages: arkMessages,
         stream: true,
       }),
@@ -94,16 +109,26 @@ export async function POST(request) {
             controller.close();
           }
         };
+        const push = (event, data) => {
+          if (!closed) {
+            controller.enqueue(encoder.encode(sseEncode(event, data)));
+          }
+        };
+
+        if (sources.length > 0) {
+          push("sources", { items: sources });
+        }
+
         const reader = arkRes.body?.getReader();
         if (!reader) {
-          controller.enqueue(
-            encoder.encode(JSON.stringify({ error: "无响应体" }) + "\n"),
-          );
+          push("error", { error: "无响应体" });
           close();
           return;
         }
+
         const decoder = new TextDecoder();
         let buffer = "";
+
         try {
           while (true) {
             const { done, value } = await reader.read();
@@ -111,41 +136,41 @@ export async function POST(request) {
             buffer += decoder.decode(value, { stream: true });
             const lines = buffer.split(/\r?\n/);
             buffer = lines.pop() ?? "";
+
             for (const line of lines) {
               const trimmed = line.trim();
               if (!trimmed || trimmed.startsWith(":")) continue;
-              if (trimmed.startsWith("data: ")) {
-                const data = trimmed.slice(6);
-                if (data === "[DONE]") {
-                  controller.enqueue(
-                    encoder.encode(JSON.stringify({ done: true }) + "\n"),
-                  );
-                  close();
-                  return;
+              if (!trimmed.startsWith("data: ")) continue;
+
+              const data = trimmed.slice(6);
+              if (data === "[DONE]") {
+                push("done", {});
+                close();
+                return;
+              }
+
+              try {
+                const obj = JSON.parse(data);
+                const delta = obj?.choices?.[0]?.delta ?? obj?.delta ?? {};
+                const reasoning =
+                  delta.reasoning_content ?? delta.reasoning ?? null;
+                const content = delta.content ?? null;
+
+                if (typeof reasoning === "string" && reasoning.length > 0) {
+                  push("thinking", { content: reasoning });
                 }
-                try {
-                  const obj = JSON.parse(data);
-                  const content =
-                    obj?.choices?.[0]?.delta?.content ?? obj?.delta?.content;
-                  if (typeof content === "string" && content.length > 0) {
-                    controller.enqueue(
-                      encoder.encode(JSON.stringify({ content }) + "\n"),
-                    );
-                  }
-                } catch (_) {
-                  // 忽略单行解析失败
+                if (typeof content === "string" && content.length > 0) {
+                  push("content", { content });
                 }
+              } catch {
+                // 忽略单行解析失败
               }
             }
           }
-          controller.enqueue(
-            encoder.encode(JSON.stringify({ done: true }) + "\n"),
-          );
+          push("done", {});
         } catch (e) {
           console.error("[chat] stream read error", e);
-          controller.enqueue(
-            encoder.encode(JSON.stringify({ error: "流读取异常" }) + "\n"),
-          );
+          push("error", { error: "流读取异常" });
         } finally {
           close();
         }
@@ -154,9 +179,10 @@ export async function POST(request) {
 
     return new Response(stream, {
       headers: {
-        "Content-Type": "application/x-ndjson; charset=utf-8",
-        "Cache-Control": "no-cache",
+        "Content-Type": "text/event-stream; charset=utf-8",
+        "Cache-Control": "no-cache, no-transform",
         Connection: "keep-alive",
+        "X-Accel-Buffering": "no",
       },
     });
   } catch (error) {

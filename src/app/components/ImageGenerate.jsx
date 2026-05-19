@@ -115,7 +115,7 @@ const ImageGenerate = () => {
       <Card 
         title={
           <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-            <PictureOutlined style={{ fontSize: '18px', color: '#667eea' }} />
+            <PictureOutlined style={{ fontSize: '18px', color: 'var(--mf-cta)' }} />
             <span>AI 图像生成</span>
           </div>
         } 
@@ -184,9 +184,7 @@ const ImageGenerate = () => {
                 padding: '12px',
                 fontSize: '16px',
                 borderRadius: '8px',
-                background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
-                border: 'none',
-                boxShadow: '0 4px 12px rgba(102, 126, 234, 0.4)'
+                border: 'none'
               }}
             >
               {loading ? '生成中...' : '生成图片'}

@@ -1,6 +1,5 @@
 import { NextResponse } from 'next/server';
 import sharp from 'sharp';
-import fs from 'fs/promises';
 import path from 'path';
 
 // 定义支持的图片格式
@@ -11,18 +10,32 @@ export async function POST(request) {
     // 解析表单数据
     const formData = await request.formData();
     const file = formData.get('file');
-    const configJson = formData.get('config');
+    const configRaw = formData.get('config');
 
     if (!file) {
       return NextResponse.json({ error: '没有提供文件' }, { status: 400 });
     }
 
-    // 解析配置
-    let config;
-    try {
-      config = JSON.parse(configJson);
-    } catch (error) {
-      return NextResponse.json({ error: '无效的配置格式' }, { status: 400 });
+    if (typeof file === 'string' || !(typeof file.arrayBuffer === 'function')) {
+      return NextResponse.json(
+        { error: '无效的 file 字段，请使用 multipart file 上传' },
+        { status: 400 }
+      );
+    }
+
+    // 解析配置（缺省或未传则用默认项，兼容部分客户端）
+    let config = {};
+    if (configRaw != null && configRaw !== '') {
+      try {
+        const text = typeof configRaw === 'string' ? configRaw : String(configRaw);
+        config = JSON.parse(text);
+      } catch {
+        return NextResponse.json({ error: '无效的配置格式（config 应为 JSON）' }, { status: 400 });
+      }
+    }
+
+    if (typeof config !== 'object' || config === null || Array.isArray(config)) {
+      return NextResponse.json({ error: 'config 必须是 JSON 对象' }, { status: 400 });
     }
 
     // 检查文件格式是否支持
@@ -36,66 +49,103 @@ export async function POST(request) {
     const buffer = Buffer.from(arrayBuffer);
     const originalSize = buffer.length;
 
+    if (!originalSize) {
+      return NextResponse.json(
+        {
+          error:
+            '文件内容为空。若用 curl 手工拼 multipart，请确保 file 段落里包含真实的图片二进制（建议用 curl -F "file=@/path/to.jpg" ...）',
+        },
+        { status: 400 }
+      );
+    }
+
     // 开始处理图片
     let image = sharp(buffer);
 
     // 获取原始图片信息
-    const metadata = await image.metadata();
+    let metadata;
+    try {
+      metadata = await image.metadata();
+    } catch (metaErr) {
+      return NextResponse.json(
+        { error: `无法读取图片（请确认为非空的有效图片）：${metaErr.message}` },
+        { status: 400 }
+      );
+    }
 
     // 根据配置设置图片处理参数
-    if (config.maxWidth || config.maxHeight) {
+    const maxWidth = typeof config.maxWidth === 'number' ? config.maxWidth : null;
+    const maxHeight = typeof config.maxHeight === 'number' ? config.maxHeight : null;
+
+    if (maxWidth || maxHeight) {
       image = image.resize({
-        width: config.maxWidth,
-        height: config.maxHeight,
+        width: maxWidth ?? undefined,
+        height: maxHeight ?? undefined,
         fit: 'inside',
-        withoutEnlargement: true
+        withoutEnlargement: true,
       });
     }
 
-    // 设置输出格式和质量
-    const outputFormat = config.outputFormat === 'original' 
-      ? (metadata.format || 'jpeg') 
-      : config.outputFormat;
+    const rawFmt =
+      typeof config.outputFormat === 'string' ? config.outputFormat.trim() : 'original';
+
+    let outputFormat =
+      rawFmt.toLowerCase() === 'original'
+        ? String(metadata.format || 'jpeg').toLowerCase()
+        : String(rawFmt).toLowerCase();
 
     // 处理不同的输出格式
-    switch (outputFormat.toLowerCase()) {
+    const qualityNum = typeof config.quality === 'number' ? config.quality : 80;
+
+    switch (outputFormat) {
       case 'jpeg':
       case 'jpg':
         image = image.jpeg({
-          quality: config.quality || 80,
+          quality: qualityNum,
           progressive: true,
           mozjpeg: true,
-          force: true
+          force: true,
         });
         break;
       case 'png':
         image = image.png({
-          quality: config.quality || 80,
+          compressionLevel: Math.round((100 - Math.min(Math.max(qualityNum, 0), 99)) / 11),
           progressive: true,
-          force: true
+          force: true,
         });
         break;
       case 'webp':
         image = image.webp({
-          quality: config.quality || 80,
-          force: true
+          quality: qualityNum,
+          force: true,
         });
         break;
       case 'avif':
         image = image.avif({
-          quality: config.quality || 80,
-          force: true
+          quality: qualityNum,
+          force: true,
         });
         break;
-      default:
-        // 保持原格式
-        if (metadata.format === 'jpeg' || metadata.format === 'jpg') {
-          image = image.jpeg({ quality: config.quality || 80 });
-        } else if (metadata.format === 'png') {
-          image = image.png({ quality: config.quality || 80 });
-        } else if (metadata.format === 'webp') {
-          image = image.webp({ quality: config.quality || 80 });
+      default: {
+        // 保持与原图相同编码；不支持的格式则安全转 JPEG
+        const fmt = (metadata.format && String(metadata.format).toLowerCase()) || '';
+        if (fmt === 'jpeg' || fmt === 'jpg') {
+          image = image.jpeg({ quality: qualityNum });
+        } else if (fmt === 'png') {
+          image = image.png();
+        } else if (fmt === 'webp') {
+          image = image.webp({ quality: qualityNum });
+        } else {
+          image = image.jpeg({
+            quality: qualityNum,
+            mozjpeg: true,
+            progressive: true,
+            force: true,
+          });
+          outputFormat = 'jpeg';
         }
+        break;
+      }
     }
 
     // 处理元数据
@@ -108,7 +158,15 @@ export async function POST(request) {
     }
 
     // 执行压缩
-    const compressedBuffer = await image.toBuffer();
+    let compressedBuffer;
+    try {
+      compressedBuffer = await image.toBuffer();
+    } catch (bufErr) {
+      return NextResponse.json(
+        { error: `图片处理失败（可能格式不支持或服务端解码异常）：${bufErr.message}` },
+        { status: 422 }
+      );
+    }
     const compressedSize = compressedBuffer.length;
 
     // 计算压缩率
@@ -117,20 +175,21 @@ export async function POST(request) {
       : 0;
 
     // 确定Content-Type
-    const contentType = {
-      'jpeg': 'image/jpeg',
-      'jpg': 'image/jpeg',
-      'png': 'image/png',
-      'webp': 'image/webp',
-      'avif': 'image/avif'
-    }[outputFormat.toLowerCase()] || 'image/jpeg';
+    const contentType =
+      {
+        jpeg: 'image/jpeg',
+        jpg: 'image/jpeg',
+        png: 'image/png',
+        webp: 'image/webp',
+        avif: 'image/avif',
+      }[outputFormat] || 'image/jpeg';
 
     // 创建响应
     const response = new NextResponse(compressedBuffer, {
       status: 200,
       headers: {
         'Content-Type': contentType,
-        'Content-Disposition': `attachment; filename=compressed.${outputFormat.toLowerCase()}`,
+        'Content-Disposition': `attachment; filename=compressed.${outputFormat}`,
         'x-compression-info': JSON.stringify({
           originalSize,
           compressedSize,

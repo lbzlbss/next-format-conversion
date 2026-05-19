@@ -1,0 +1,48 @@
+---
+description: MediaFlow UI/UX 规范 — 基于 ui-ux-pro-max-skill 与 design.md
+globs: src/app/**/*.{jsx,tsx,css}
+alwaysApply: false
+---
+
+# MediaFlow UI 规则
+
+## 必读
+
+1. 改 UI 前先读项目根目录 `design.md`
+2. 改具体页面前读 `design-system/mediaflow/pages/<page>.md`（若存在），否则读 `design-system/mediaflow/MASTER.md`
+3. 需要新设计决策时运行：
+   `python3 .cursor/skills/ui-ux-pro-max/scripts/search.py "<关键词>" --design-system -p MediaFlow --stack nextjs`
+
+## 色彩与 Token
+
+- 使用 `globals.css` 中 `--mf-*` 变量或 Tailwind `mf-*` 主题色
+- 主 CTA / Ant Design `colorPrimary`：`#2563EB`（Studio Blue）
+- 侧栏：`bg-mf-sidebar`；画布：`bg-mf-canvas`；卡片：`mf-card`
+- **禁止** 紫粉 AI 渐变作为主视觉
+
+## 字体
+
+- 正文：Fira Sans（已在 layout 配置）
+- 标题/工具名：可用 `font-mono`（Fira Code）
+
+## 组件约定
+
+- 可点击元素：`cursor-pointer` + `transition` 200ms + `mf-focus-ring`（focus-visible）
+- 提示信息：`.mf-tip`，不用随意紫底
+- 子页面（/chat、/wiki）：复用 `SubPageHeader`
+- 图标：Ant Design Icons，不用 emoji 代替图标
+
+## 布局
+
+- 主页：左栏导航 + 顶栏 + 主内容 + 右侧参数面板（md+）
+- 移动端：侧栏隐藏，顶栏用 `Select` 切换工具
+
+## 反模式
+
+- 不引入与现有 Ant Design + Tailwind 冲突的新 UI 库（除非用户明确要求）
+- 不硬编码散落 hex，优先 token / `mf-*` class
+- 不做悬停 layout shift（避免 scale 整卡）
+
+## 交付检查
+
+对照 `design.md` 第 9 节清单与 skill 的 Pre-Delivery Checklist。

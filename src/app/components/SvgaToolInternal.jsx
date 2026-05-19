@@ -584,7 +584,7 @@ function SvgaToolMain() {
               </Button>
             </Space>
           </div>
-          {!ready && <div className="text-[12px] text-slate-500">SVGA 播放器脚本加载中…</div>}
+          {!ready && <div className="text-[12px] text-mf-muted">SVGA 播放器脚本加载中…</div>}
           {error && <div className="text-[12px] text-red-500">SVGA 播放器脚本加载失败，请检查网络。</div>}
         </Space>
       </Card>
@@ -601,7 +601,7 @@ function SvgaToolMain() {
             style={{ transform: `scale(${scale})`, transformOrigin: 'center center' }}
           />
         </div>
-        <div className="mt-3 text-[12px] text-slate-500">
+        <div className="mt-3 text-[12px] text-mf-muted">
           提示：若预览为空，请点“加载/刷新”。在右侧「Conversion Settings」中可替换资源图、调整画布与导出。
         </div>
       </Card>
@@ -658,19 +658,19 @@ function SvgaToolEditPanel() {
                 children: (
                   <Space orientation="vertical" style={{ width: '100%' }} size={12}>
                     <div>
-                      <div className="mb-2 text-[12px] font-semibold text-slate-700">画布尺寸</div>
+                      <div className="mb-2 text-[12px] font-semibold text-mf-text">画布尺寸</div>
                       <Space>
                         <InputNumber min={64} max={4096} value={canvasWidth} onChange={(v) => setCanvasWidth(Number(v || 600))} />
-                        <span className="text-slate-500">×</span>
+                        <span className="text-mf-muted">×</span>
                         <InputNumber min={64} max={4096} value={canvasHeight} onChange={(v) => setCanvasHeight(Number(v || 600))} />
                       </Space>
                     </div>
                     <div>
-                      <div className="mb-2 text-[12px] font-semibold text-slate-700">缩放</div>
+                      <div className="mb-2 text-[12px] font-semibold text-mf-text">缩放</div>
                       <Slider min={0.2} max={2} step={0.05} value={scale} onChange={setScale} />
                     </div>
                     <div>
-                      <div className="mb-2 text-[12px] font-semibold text-slate-700">背景色</div>
+                      <div className="mb-2 text-[12px] font-semibold text-mf-text">背景色</div>
                       <Input value={background} onChange={(e) => setBackground(e.target.value)} placeholder="#ffffff" />
                     </div>
                   </Space>
@@ -681,10 +681,10 @@ function SvgaToolEditPanel() {
                 label: '图片替换',
                 children: (
                   <Space direction="vertical" style={{ width: '100%' }} size={12}>
-                    <div className="text-[12px] font-semibold text-slate-700">资源列表（点击选中并高亮）</div>
-                    <div className="grid max-h-[200px] grid-cols-3 gap-2 overflow-y-auto rounded-lg border border-slate-200 bg-slate-50 p-2">
+                    <div className="text-[12px] font-semibold text-mf-text">资源列表（点击选中并高亮）</div>
+                    <div className="grid max-h-[200px] grid-cols-3 gap-2 overflow-y-auto rounded-lg border border-mf-border bg-mf-canvas p-2">
                       {assetEntries.length === 0 ? (
-                        <div className="col-span-3 py-4 text-center text-[12px] text-slate-500">加载 SVGA 后显示资源</div>
+                        <div className="col-span-3 py-4 text-center text-[12px] text-mf-muted">加载 SVGA 后显示资源</div>
                       ) : (
                         assetEntries.map(({ key: k, src }) => {
                           const displaySrc = replaceMap[k] || src;
@@ -695,17 +695,17 @@ function SvgaToolEditPanel() {
                               type="button"
                               onClick={() => setReplaceKey(k)}
                               className={`flex flex-col items-center gap-1 rounded-lg border-2 p-1 transition ${
-                                selected ? 'border-indigo-500 bg-indigo-50' : 'border-transparent hover:border-slate-300 hover:bg-white'
+                                selected ? 'border-mf-cta bg-mf-accent-soft' : 'border-transparent hover:border-mf-border hover:bg-mf-surface'
                               }`}
                             >
                               <div className="relative h-14 w-14 overflow-hidden rounded bg-white">
                                 {displaySrc ? (
                                   <img src={displaySrc} alt="" className="h-full w-full object-contain" onError={(e) => { e.target.style.display = 'none'; }} />
                                 ) : (
-                                  <div className="flex h-full w-full items-center justify-center text-[10px] text-slate-400">无图</div>
+                                  <div className="flex h-full w-full items-center justify-center text-[10px] text-mf-muted">无图</div>
                                 )}
                               </div>
-                              <span className="max-w-full truncate text-[10px] text-slate-600" title={k}>{k}</span>
+                              <span className="max-w-full truncate text-[10px] text-mf-muted" title={k}>{k}</span>
                             </button>
                           );
                         })
@@ -716,7 +716,7 @@ function SvgaToolEditPanel() {
                       onChange={(e) => setReplaceKey(e.target.value)}
                       placeholder="或手动填写资源 key"
                     />
-                    <div className="text-[12px] font-semibold text-slate-700">替换为</div>
+                    <div className="text-[12px] font-semibold text-mf-text">替换为</div>
                     <div className="flex flex-wrap gap-2">
                       <Input
                         className="flex-1 min-w-0"
@@ -740,7 +740,7 @@ function SvgaToolEditPanel() {
                     <Button type="default" icon={<SwapOutlined />} onClick={applyReplace} disabled={!replaceKey}>
                       应用当前替换到预览
                     </Button>
-                    <div className="text-[12px] text-slate-500">
+                    <div className="text-[12px] text-mf-muted">
                       选择 key 后可用链接（先下载）或本地上传替换；导出时所有已替换资源会写入文件。
                     </div>
                   </Space>
@@ -752,7 +752,7 @@ function SvgaToolEditPanel() {
                 children: (
                   <Space orientation="vertical" style={{ width: '100%' }} size={12}>
                     <div className="flex items-center justify-between">
-                      <div className="text-[12px] font-semibold text-slate-700">静音</div>
+                      <div className="text-[12px] font-semibold text-mf-text">静音</div>
                       <Switch
                         checked={audioMute}
                         onChange={(v) => {
@@ -766,7 +766,7 @@ function SvgaToolEditPanel() {
                       />
                     </div>
                     <div>
-                      <div className="mb-2 text-[12px] font-semibold text-slate-700">音量</div>
+                      <div className="mb-2 text-[12px] font-semibold text-mf-text">音量</div>
                       <Slider
                         min={0}
                         max={100}
@@ -780,7 +780,7 @@ function SvgaToolEditPanel() {
                         }}
                       />
                     </div>
-                    <div className="text-[12px] text-slate-500">
+                    <div className="text-[12px] text-mf-muted">
                       说明：SVGA Web 的音频能力因版本/浏览器差异较大。这里做了 best-effort 的静音/音量控制；如需“剪辑/替换音频”，需要后端解包与重新打包流程（后续可补）。
                     </div>
                   </Space>
@@ -792,7 +792,7 @@ function SvgaToolEditPanel() {
                 children: (
                   <Space direction="vertical" style={{ width: '100%' }} size={12}>
                     <div>
-                      <div className="mb-2 text-[12px] font-semibold text-slate-700">图片质量 (0–1)</div>
+                      <div className="mb-2 text-[12px] font-semibold text-mf-text">图片质量 (0–1)</div>
                       <Slider
                         min={0.1}
                         max={1}
@@ -802,14 +802,14 @@ function SvgaToolEditPanel() {
                       />
                     </div>
                     <div className="flex items-center justify-between">
-                      <div className="text-[12px] font-semibold text-slate-700">移除音频</div>
+                      <div className="text-[12px] font-semibold text-mf-text">移除音频</div>
                       <Switch
                         checked={compressOptions.removeAudio}
                         onChange={(v) => setCompressOptions((o) => ({ ...o, removeAudio: v }))}
                       />
                     </div>
                     <div className="flex items-center justify-between">
-                      <div className="text-[12px] font-semibold text-slate-700">资源去重</div>
+                      <div className="text-[12px] font-semibold text-mf-text">资源去重</div>
                       <Switch
                         checked={compressOptions.deduplicate}
                         onChange={(v) => setCompressOptions((o) => ({ ...o, deduplicate: v }))}
@@ -825,8 +825,8 @@ function SvgaToolEditPanel() {
                       开始压缩
                     </Button>
                     {compressResult && (
-                      <Card size="small" className="bg-slate-50">
-                        <div className="text-[12px] text-slate-700">
+                      <Card size="small" className="bg-mf-canvas">
+                        <div className="text-[12px] text-mf-text">
                           <div>原始: {(compressResult.originalSize / 1024).toFixed(2)} KB</div>
                           <div>压缩后: {(compressResult.compressedSize / 1024).toFixed(2)} KB</div>
                           <div>体积减少: {compressResult.compressionRatio}%</div>
@@ -842,7 +842,7 @@ function SvgaToolEditPanel() {
                         </Button>
                       </Card>
                     )}
-                    <div className="text-[12px] text-slate-500">
+                    <div className="text-[12px] text-mf-muted">
                       通过资源去重、可选移除音频与质量参数重新打包，降低 SVGA 体积。
                     </div>
                   </Space>
@@ -854,7 +854,7 @@ function SvgaToolEditPanel() {
                 children: (
                   <Space direction="vertical" style={{ width: '100%' }} size={12}>
                     <div>
-                      <div className="mb-2 text-[12px] font-semibold text-slate-700">目标格式</div>
+                      <div className="mb-2 text-[12px] font-semibold text-mf-text">目标格式</div>
                       <Select
                         value={convertFormat}
                         onChange={setConvertFormat}
@@ -876,11 +876,11 @@ function SvgaToolEditPanel() {
                       获取转换信息
                     </Button>
                     {convertResult && (
-                      <Card size="small" className="bg-slate-50">
-                        <div className="text-[12px] text-slate-700">
+                      <Card size="small" className="bg-mf-canvas">
+                        <div className="text-[12px] text-mf-text">
                           <div className="mb-1">{convertResult.message}</div>
                           {convertResult.spec && (
-                            <div className="text-slate-500">
+                            <div className="text-mf-muted">
                               帧数: {convertResult.spec.frames} · FPS: {convertResult.spec.fps} · 尺寸: {convertResult.spec.width}×{convertResult.spec.height}
                               {convertResult.spec.duration != null && ` · 时长: ${convertResult.spec.duration.toFixed(2)}s`}
                             </div>
@@ -888,7 +888,7 @@ function SvgaToolEditPanel() {
                         </div>
                       </Card>
                     )}
-                    <div className="text-[12px] text-slate-500">
+                    <div className="text-[12px] text-mf-muted">
                       GIF/MP4/WebM/PNG 序列需服务端或客户端渲染管线，当前接口返回规格信息；完整导出需后续接入渲染能力。
                     </div>
                   </Space>

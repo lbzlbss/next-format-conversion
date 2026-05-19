@@ -1,0 +1,20 @@
+---
+description: 启用 ui-ux-pro-max-skill 工作流（UI/UX 设计、改版、审查）
+alwaysApply: true
+---
+
+# UI UX Pro Max 工作流
+
+当用户请求 **设计 / 改版 / 优化 UI / 审查界面 / 新建页面样式** 时：
+
+1. 阅读 `.cursor/skills/ui-ux-pro-max/SKILL.md`
+2. 用设计系统命令分析需求（示例）：
+   ```bash
+   python3 .cursor/skills/ui-ux-pro-max/scripts/search.py "<产品类型> <行业> <关键词>" --design-system --persist -p "MediaFlow" -f markdown --stack nextjs
+   ```
+3. 将结果同步到 `design.md` 与 `design-system/mediaflow/`
+4. 实现时遵循 `.cursor/rules/mediaflow-ui-design.mdc`
+
+Skill 仓库：https://github.com/nextlevelbuilder/ui-ux-pro-max-skill
+
+更新 Skill：`npx uipro-cli update`

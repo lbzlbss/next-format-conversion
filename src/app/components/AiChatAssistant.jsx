@@ -107,7 +107,7 @@ const AiChatAssistant = () => {
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
-        className="fixed bottom-6 right-6 z-[1000] flex size-14 items-center justify-center rounded-full bg-[linear-gradient(135deg,#6366f1_0%,#a855f7_100%)] text-white shadow-lg transition hover:scale-105 hover:shadow-xl"
+        className="fixed bottom-6 right-6 z-[1000] flex size-14 items-center justify-center rounded-full bg-mf-cta text-white shadow-lg transition hover:scale-105 hover:shadow-xl"
         aria-label="打开 AI 助手"
       >
         <RobotOutlined className="text-[24px]" />
@@ -121,7 +121,7 @@ const AiChatAssistant = () => {
         >
           <div className="flex shrink-0 items-center justify-between border-b border-[#e2e8f0] px-4 py-3">
             <div className="flex items-center gap-2">
-              <div className="grid size-8 shrink-0 place-items-center rounded-lg bg-[linear-gradient(135deg,#6366f1_0%,#a855f7_100%)]">
+              <div className="grid size-8 shrink-0 place-items-center rounded-lg bg-mf-cta">
                 <RobotOutlined className="text-white" />
               </div>
               <div className="min-w-0">
@@ -154,14 +154,14 @@ const AiChatAssistant = () => {
                     icon={m.role === 'user' ? <UserOutlined /> : <RobotOutlined />}
                     className={
                       m.role === 'user'
-                        ? 'shrink-0 bg-[#6366f1]'
-                        : 'shrink-0 bg-[linear-gradient(135deg,#6366f1_0%,#a855f7_100%)]'
+                        ? 'shrink-0 !bg-mf-cta'
+                        : 'shrink-0 !bg-mf-sidebar'
                     }
                   />
                   <div
                     className={
                       m.role === 'user'
-                        ? 'max-w-[85%] rounded-2xl rounded-tr-md bg-[#6366f1] px-4 py-2 text-[13px] text-white'
+                        ? 'max-w-[85%] rounded-2xl rounded-tr-md bg-mf-cta px-4 py-2 text-[13px] text-white'
                         : 'max-w-[85%] rounded-2xl rounded-tl-md bg-[#f1f5f9] px-4 py-2 text-[13px] text-[#0f172a]'
                     }
                   >
@@ -174,7 +174,7 @@ const AiChatAssistant = () => {
                   <Avatar
                     size={36}
                     icon={<RobotOutlined />}
-                    className="shrink-0 bg-[linear-gradient(135deg,#6366f1_0%,#a855f7_100%)]"
+                    className="shrink-0 bg-mf-cta"
                   />
                   <div className="max-w-[85%] rounded-2xl rounded-tl-md bg-[#f1f5f9] px-4 py-2 text-[13px] text-[#0f172a]">
                     <div className="whitespace-pre-wrap break-words">
@@ -207,7 +207,7 @@ const AiChatAssistant = () => {
                 icon={<SendOutlined />}
                 onClick={handleSend}
                 loading={loading}
-                className="shrink-0 rounded-xl bg-[linear-gradient(135deg,#6366f1_0%,#a855f7_100%)]"
+                className="shrink-0 rounded-xl bg-mf-cta"
               >
                 发送
               </Button>

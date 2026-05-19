@@ -1,0 +1,8 @@
+{
+  "categories": [
+    { "id": "getting-started", "label": "入门指南" },
+    { "id": "tools", "label": "工具手册" },
+    { "id": "ai", "label": "AI 创作" },
+    { "id": "fortune", "label": "命理参考" }
+  ]
+}

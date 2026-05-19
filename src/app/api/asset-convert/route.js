@@ -12,6 +12,7 @@ import sharp from 'sharp';
 import { ApiError, LIMITS, assertFile, toErrorResponse, withTimeout } from '../_lib/guard';
 
 const _require = createRequire(import.meta.url);
+export const maxDuration = 300;
 
 // ─── ffmpeg path ───────────────────────────────────────────────────────────────
 let ffmpegBin = null;
@@ -239,23 +240,125 @@ async function zipToFrames(zipBuffer) {
   return entries;
 }
 
+function parseInputPayload(contentType, formData, jsonBody) {
+  if (contentType.includes('application/json')) {
+    return {
+      file: null,
+      blobUrl: String(jsonBody?.blobUrl || '').trim(),
+      outFormat: String(jsonBody?.format || 'vap').toLowerCase(),
+      fps: parsePositiveInt(jsonBody?.fps) ?? 30,
+      fit: String(jsonBody?.fit || 'contain').toLowerCase(),
+      pack: String(jsonBody?.pack || 'right').toLowerCase(),
+      reqW: parsePositiveInt(jsonBody?.width),
+      reqH: parsePositiveInt(jsonBody?.height),
+      stem: String(jsonBody?.filename || 'asset').replace(/\.(zip|svga|vap)$/i, ''),
+    };
+  }
+
+  return {
+    file: formData?.get('file'),
+    blobUrl: String(formData?.get('blobUrl') || '').trim(),
+    outFormat: String(formData?.get('format') || 'vap').toLowerCase(),
+    fps: parsePositiveInt(formData?.get('fps')) ?? 30,
+    fit: String(formData?.get('fit') || 'contain').toLowerCase(),
+    pack: String(formData?.get('pack') || 'right').toLowerCase(),
+    reqW: parsePositiveInt(formData?.get('width')),
+    reqH: parsePositiveInt(formData?.get('height')),
+    stem: String(formData?.get('filename') || 'asset').replace(/\.(zip|svga|vap)$/i, ''),
+  };
+}
+
+async function fetchWithTimeout(url, timeoutMs = 45000) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    return await fetch(url, { signal: controller.signal, cache: 'no-store' });
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 export async function POST(request) {
   try {
     return await withTimeout(
       (async () => {
-        const formData = await request.formData();
-        const file = formData.get('file');
-        const outFormat = String(formData.get('format') || 'vap').toLowerCase();
-        const fps = parsePositiveInt(formData.get('fps')) ?? 30;
-        const fit = String(formData.get('fit') || 'contain').toLowerCase();
-        // VAP packing: "right" means RGB left + Alpha right (hstack).
-        // Kept as a form param for future, default to "right" to match user reference.
-        const pack = String(formData.get('pack') || 'right').toLowerCase(); // right | bottom
-        const reqW = parsePositiveInt(formData.get('width'));
-        const reqH = parsePositiveInt(formData.get('height'));
+        const contentType = String(request.headers.get('content-type') || '').toLowerCase();
+        const isJson = contentType.includes('application/json');
+        const jsonBody = isJson ? await request.json() : null;
+        const formData = isJson ? null : await request.formData();
 
-        assertFile(file, { maxBytes: LIMITS.SVGA_VAP_MAX_BYTES, label: '压缩包' });
-        if (!String(file.name || '').toLowerCase().endsWith('.zip')) {
+        const { file, blobUrl, outFormat, fps, fit, pack, reqW, reqH, stem } = parseInputPayload(
+          contentType,
+          formData,
+          jsonBody
+        );
+
+        let zipBuffer = null;
+        let inputName = `${stem || 'asset'}.zip`;
+
+        if (blobUrl) {
+          let parsedUrl = null;
+          try {
+            parsedUrl = new URL(blobUrl);
+          } catch (_) {
+            throw new ApiError('INVALID_FORMAT', 'blobUrl 不是有效 URL', 400);
+          }
+          if (parsedUrl.protocol !== 'https:') {
+            throw new ApiError('INVALID_FORMAT', 'blobUrl 仅支持 https', 400);
+          }
+
+          let remote = null;
+          try {
+            remote = await fetchWithTimeout(blobUrl, 45000);
+          } catch (err) {
+            const reason =
+              err?.name === 'AbortError'
+                ? '下载超时（45s）'
+                : err?.cause?.message || err?.message || '未知网络错误';
+            throw new ApiError('BLOB_FETCH_FAILED', `下载 blobUrl 失败: ${reason}`, 502, {
+              host: parsedUrl.host,
+              pathname: parsedUrl.pathname,
+            });
+          }
+          if (!remote.ok) {
+            throw new ApiError('BLOB_FETCH_FAILED', `下载 blobUrl 失败 (${remote.status})`, 502, {
+              host: parsedUrl.host,
+              pathname: parsedUrl.pathname,
+              status: remote.status,
+            });
+          }
+          const remoteBytes = Number(remote.headers.get('content-length') || 0);
+          if (remoteBytes > LIMITS.SVGA_VAP_MAX_BYTES) {
+            throw new ApiError(
+              'FILE_TOO_LARGE',
+              `压缩包过大，请上传小于 ${(LIMITS.SVGA_VAP_MAX_BYTES / 1024 / 1024).toFixed(0)}MB 的文件`,
+              413,
+              { maxBytes: LIMITS.SVGA_VAP_MAX_BYTES, actualBytes: remoteBytes }
+            );
+          }
+          zipBuffer = Buffer.from(await remote.arrayBuffer());
+          if (zipBuffer.length === 0) {
+            throw new ApiError('INVALID_FORMAT', 'blobUrl 文件为空', 400);
+          }
+          if (zipBuffer.length > LIMITS.SVGA_VAP_MAX_BYTES) {
+            throw new ApiError(
+              'FILE_TOO_LARGE',
+              `压缩包过大，请上传小于 ${(LIMITS.SVGA_VAP_MAX_BYTES / 1024 / 1024).toFixed(0)}MB 的文件`,
+              413,
+              { maxBytes: LIMITS.SVGA_VAP_MAX_BYTES, actualBytes: zipBuffer.length }
+            );
+          }
+          inputName = path.basename(parsedUrl.pathname) || inputName;
+        } else {
+          assertFile(file, { maxBytes: LIMITS.SVGA_VAP_MAX_BYTES, label: '压缩包' });
+          if (!String(file.name || '').toLowerCase().endsWith('.zip')) {
+            throw new ApiError('INVALID_FORMAT', '请上传 .zip 压缩包', 400);
+          }
+          zipBuffer = Buffer.from(await file.arrayBuffer());
+          inputName = String(file.name || inputName);
+        }
+
+        if (!String(inputName || '').toLowerCase().endsWith('.zip')) {
           throw new ApiError('INVALID_FORMAT', '请上传 .zip 压缩包', 400);
         }
         if (!['vap', 'svga'].includes(outFormat)) {
@@ -270,8 +373,6 @@ export async function POST(request) {
         if (!['right', 'bottom'].includes(pack)) {
           throw new ApiError('INVALID_FORMAT', 'pack 仅支持 right | bottom', 400);
         }
-
-        const zipBuffer = Buffer.from(await file.arrayBuffer());
         const frames = await zipToFrames(zipBuffer);
         if (frames.length === 0) {
           throw new ApiError('INVALID_FORMAT', '压缩包中未找到可用图片（png/jpg/jpeg/webp）', 400);
@@ -326,7 +427,7 @@ export async function POST(request) {
             resizedPngs.push(pngBuf);
           }
 
-          const stem = String(file.name || 'asset').replace(/\.zip$/i, '');
+          const outStem = String(inputName || 'asset').replace(/\.zip$/i, '');
           if (outFormat === 'svga') {
             // SVGA 产物按显示尺寸输出（不带 padding），避免资源带透明边造成误会。
             // 这里仍使用 pad 后的 pngBuffers，但 spec 的 viewBox 用 encW/encH，
@@ -335,7 +436,7 @@ export async function POST(request) {
             return new NextResponse(svgaBuf, {
               headers: {
                 'Content-Type': 'application/octet-stream',
-                'Content-Disposition': `attachment; filename="${encodeURIComponent(`${stem}_${encW}x${encH}_${fps}.svga`)}"`,
+                'Content-Disposition': `attachment; filename="${encodeURIComponent(`${outStem}_${encW}x${encH}_${fps}.svga`)}"`,
               },
             });
           }
@@ -373,7 +474,7 @@ export async function POST(request) {
           return new NextResponse(vapBuf, {
             headers: {
               'Content-Type': 'application/octet-stream',
-              'Content-Disposition': `attachment; filename="${encodeURIComponent(`${stem}_${encW}x${encH}_${fps}.vap`)}"`,
+              'Content-Disposition': `attachment; filename="${encodeURIComponent(`${outStem}_${encW}x${encH}_${fps}.vap`)}"`,
             },
           });
         } finally {
@@ -383,7 +484,7 @@ export async function POST(request) {
           } catch (_) {}
         }
       })(),
-      120000
+      280000
     );
   } catch (e) {
     return toErrorResponse(e);
