@@ -10,7 +10,7 @@ export default function ChatPage() {
     <div className="flex h-screen flex-col bg-mf-canvas">
       <SubPageHeader
         title="AI 对话助手"
-        subtitle="创作专家 · 视频转换 · 八字命理 · Wiki RAG"
+        subtitle="创作专家 · 视频转换 · 八字命理 · Wiki RAG · 支持导出 PDF"
         actions={
           <>
             <span className="mf-logo-badge hidden sm:grid">

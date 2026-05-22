@@ -169,6 +169,15 @@ next-format-conversion/
 - 确保文件未损坏
 - 尝试减小文件大小
 
+## Agent 全流程闭环
+
+从一句话需求到 Git 合并、Vercel 性能报告的流水线，见 [docs/agent/README.md](docs/agent/README.md)。
+
+```bash
+# Cursor 中: /agent-pipeline + 一句话需求
+pnpm agent:run -- "你的需求描述"
+```
+
 ## 未来计划
 
 - [ ] 支持更多文件格式

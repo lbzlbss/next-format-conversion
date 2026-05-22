@@ -1,0 +1,14 @@
+---
+description: MediaFlow Agent 全流程 — 一句话需求到 Vercel 性能报告
+globs: docs/agent/**/*
+alwaysApply: false
+---
+
+# Agent Pipeline 规则
+
+处理 `docs/agent/` 或用户提到 **agent 全流程 / agent-pipeline** 时：
+
+1. 必读 `.cursor/skills/mediaflow-agent-pipeline/SKILL.md`
+2. 用 `docs/agent/runs/<runId>/state.json` 判断当前阶段
+3. 合并主分支、打 tag 必须用户明确确认后再执行 `pnpm agent:git -- merge ... --confirm`
+4. UI 实现联动 `figma-to-code-sync` 与 `mediaflow-ui-design.mdc`

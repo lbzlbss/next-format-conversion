@@ -20,6 +20,10 @@
 # production
 /build
 
+# chat PDF fonts (run: node scripts/ensure-chat-pdf-font.mjs)
+/public/fonts/*.otf
+/public/fonts/*.ttf
+
 # misc
 .DS_Store
 *.pem

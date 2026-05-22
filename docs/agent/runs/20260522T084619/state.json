@@ -1,0 +1,35 @@
+{
+  "runId": "20260522T084619",
+  "slug": "ai对话助手支持生成pdf并提供下载",
+  "requirement": "AI对话助手支持生成PDF并提供下载",
+  "figmaUrl": null,
+  "createdAt": "2026-05-22T08:46:19.739Z",
+  "updatedAt": "2026-05-22T08:50:00.000Z",
+  "phase": "git",
+  "phases": {
+    "intake": { "status": "completed" },
+    "analyze": {
+      "status": "completed",
+      "designSpec": "02-design-spec.md",
+      "analysis": "02-requirement-analysis.md",
+      "searchOk": true
+    },
+    "implement": {
+      "status": "completed",
+      "lintOk": false,
+      "buildOk": true,
+      "testReport": "03-test-report.md",
+      "note": "lint 失败为仓库既有 SidebarNav 问题"
+    },
+    "git": {
+      "status": "in-progress",
+      "branch": "feat/20260522T084619-ai对话助手支持生成pdf并提供下载",
+      "commitPending": true,
+      "commitBlocker": "commit-msg hook 报 unknown option trailer"
+    },
+    "deploy": { "status": "pending" }
+  },
+  "branch": "feat/20260522T084619-ai对话助手支持生成pdf并提供下载",
+  "tag": null,
+  "vercelDeploymentUrl": null
+}
