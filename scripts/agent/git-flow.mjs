@@ -66,11 +66,11 @@ if (action === "branch") {
 }
 
 if (action === "check") {
-  const lint = tryRunCmd("pnpm lint", { silent: true });
-  const build = tryRunCmd("pnpm build", { silent: true });
-  if (!lint.ok) fail(`Lint 未通过:\n${lint.error}`);
-  if (!build.ok) fail(`Build 未通过:\n${build.error}`);
-  console.log("✅ 预检通过，可合并");
+  const verify = tryRunCmd(`node scripts/agent/verify.mjs ${runId} --prod https://nextformat.aiblank.top/`, {
+    silent: true,
+  });
+  if (!verify.ok) fail(`验证未通过:\n${verify.error?.slice(0, 1500)}`);
+  console.log("✅ 预检通过（verify + 线上冒烟），可合并");
   process.exit(0);
 }
 
@@ -87,9 +87,10 @@ if (action === "merge") {
     if (!co.ok) fail(`请先切换到功能分支 ${featureBranch}`);
   }
 
-  const check = tryRunCmd("pnpm lint", { silent: true });
-  const build = tryRunCmd("pnpm build", { silent: true });
-  if (!check.ok || !build.ok) fail("合并前检查未通过，请先修复");
+  const verify = tryRunCmd(`node scripts/agent/verify.mjs ${runId} --prod https://nextformat.aiblank.top/`, {
+    silent: true,
+  });
+  if (!verify.ok) fail(`合并前验证未通过，请运行: pnpm agent:verify -- ${runId} --prod https://nextformat.aiblank.top/\n${verify.error?.slice(0, 800)}`);
 
   tryRunCmd(`git checkout ${defaultBranch}`);
   tryRunCmd(`git merge --no-ff ${featureBranch} -m "feat(agent): ${state.requirement} (${runId})"`);

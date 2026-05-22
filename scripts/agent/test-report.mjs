@@ -4,19 +4,24 @@
  */
 import fs from "node:fs";
 import path from "node:path";
+import fs from "node:fs";
+import { spawnSync } from "node:child_process";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import {
   copyTemplate,
   getRunDir,
   loadRun,
+  REPO_ROOT,
   saveRun,
-  tryRunCmd,
   cliArgs,
   updatePhase,
 } from "./lib/run-context.mjs";
 
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const runId = cliArgs(process.argv.slice(2))[0];
 if (!runId) {
-  console.error("用法: pnpm agent:test -- <runId>");
+  console.error("用法: pnpm agent:test -- <runId> [--prod <url>]");
   process.exit(1);
 }
 
@@ -24,17 +29,28 @@ const state = loadRun(runId);
 const runDir = getRunDir(runId);
 const reportPath = path.join(runDir, "03-test-report.md");
 
-const lint = tryRunCmd("pnpm lint", { silent: true });
-const build = tryRunCmd("pnpm build", { silent: true });
+const prodIdx = process.argv.indexOf("--prod");
+const verifyArgs = [path.join(__dirname, "verify.mjs"), runId];
+if (prodIdx >= 0 && process.argv[prodIdx + 1]) {
+  verifyArgs.push("--prod", process.argv[prodIdx + 1]);
+}
+
+const verifyRun = spawnSync("node", verifyArgs, {
+  cwd: REPO_ROOT,
+  encoding: "utf8",
+});
+const verifyOk = verifyRun.status === 0;
+const verifyMd = path.join(runDir, "04-verify-report.md");
+const verifySection = fs.existsSync(verifyMd)
+  ? fs.readFileSync(verifyMd, "utf8")
+  : "（未生成 verify 报告）";
 
 const sections = [
-  "## 自动化检查",
+  "## 自动化检查（含 verify 闭环）",
   "",
-  "### ESLint",
-  lint.ok ? "✅ 通过" : `❌ 失败\n\`\`\`\n${lint.error}\n\`\`\``,
+  verifyOk ? "✅ `pnpm agent:verify` 全部通过" : "❌ `pnpm agent:verify` 存在失败项",
   "",
-  "### Production Build",
-  build.ok ? "✅ 通过" : `❌ 失败\n\`\`\`\n${build.error}\n\`\`\``,
+  verifySection,
   "",
   "## 人工验收清单",
   "",
@@ -58,17 +74,19 @@ copyTemplate("test-report.md", reportPath, {
 });
 
 state.phases.implement = {
-  status: lint.ok && build.ok ? "completed" : "needs-fix",
-  lintOk: lint.ok,
-  buildOk: build.ok,
+  status: verifyOk ? "completed" : "needs-fix",
+  verifyOk,
   testReport: "03-test-report.md",
+  verifyReport: "04-verify-report.md",
 };
 saveRun(state);
 updatePhase(runId, "implement", state.phases.implement);
 
-console.log(lint.ok && build.ok ? "\n✅ 测试报告已生成（检查通过）" : "\n⚠️ 测试报告已生成（存在失败项）");
+console.log(verifyOk ? "\n✅ 测试报告已生成（验证通过）" : "\n⚠️ 测试报告已生成（请按 04-verify-report 修复）");
 console.log(`   ${reportPath}`);
-console.log(`\n下一步: pnpm agent:git -- branch ${runId}`);
-console.log(`         完成开发后: pnpm agent:git -- merge ${runId} --tag v0.x.x --confirm\n`);
+if (!verifyOk) {
+  console.log(`\n修复闭环: pnpm agent:loop -- ${runId} --prod https://nextformat.aiblank.top/\n`);
+}
+console.log(`\n下一步: pnpm agent:git -- check ${runId}\n`);
 
-process.exit(lint.ok && build.ok ? 0 : 1);
+process.exit(verifyOk ? 0 : 1);

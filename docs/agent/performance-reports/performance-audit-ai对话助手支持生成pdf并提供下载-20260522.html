@@ -1,0 +1,192 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Performance Audit — ai对话助手支持生成pdf并提供下载</title>
+<style>*{margin:0;padding:0;box-sizing:border-box}
+body{background:#0f1117;color:#c9d1d9;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Oxygen,sans-serif;padding:20px;line-height:1.6}
+.container{max-width:900px;margin:0 auto}
+h1{color:#58a6ff;font-size:1.5em;margin-bottom:4px}
+h2{color:#e6edf3;font-size:1.15em;margin:24px 0 12px;padding-bottom:6px;border-bottom:1px solid #30363d}
+.subtitle{color:#8b949e;font-size:0.85em;margin-bottom:20px}
+.card{background:#161b22;border:1px solid #30363d;border-radius:8px;padding:16px;margin-bottom:16px}
+.grid-2{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.grid-3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px}
+@media(max-width:600px){.grid-2,.grid-3{grid-template-columns:1fr}}
+.score-card{background:#161b22;border:1px solid #30363d;border-radius:8px;padding:14px;text-align:center}
+.score-card .label{font-size:0.75em;color:#8b949e;text-transform:uppercase;letter-spacing:0.5px}
+.score-card .value{font-size:1.5em;font-weight:700;margin:4px 0}
+.badge{display:inline-block;padding:2px 8px;border-radius:12px;font-size:0.75em;font-weight:600}
+.good{background:rgba(63,185,80,0.15);color:#3fb950;border:1px solid rgba(63,185,80,0.3)}
+.warn{background:rgba(210,153,34,0.15);color:#d29922;border:1px solid rgba(210,153,34,0.3)}
+.poor{background:rgba(248,81,73,0.15);color:#f85149;border:1px solid rgba(248,81,73,0.3)}
+.info{background:rgba(88,166,255,0.15);color:#58a6ff;border:1px solid rgba(88,166,255,0.3)}
+table{width:100%;border-collapse:collapse;font-size:0.85em}
+th,td{padding:8px 10px;text-align:left;border-bottom:1px solid #21262d}
+th{color:#8b949e;font-weight:600;font-size:0.8em;text-transform:uppercase;letter-spacing:0.3px}
+td{color:#c9d1d9}
+.issue{padding:12px 14px;border-radius:6px;margin-bottom:10px;border-left:4px solid}
+.issue.p0{background:rgba(248,81,73,0.08);border-color:#f85149}
+.issue.p1{background:rgba(210,153,34,0.08);border-color:#d29922}
+.issue.p2{background:rgba(88,166,255,0.08);border-color:#58a6ff}
+.issue .tag{font-weight:700;margin-right:6px}
+.issue p{margin:4px 0 0;color:#8b949e;font-size:0.85em}
+.quick-win{background:rgba(63,185,80,0.08);border:1px solid rgba(63,185,80,0.25);border-radius:8px;padding:14px;margin-bottom:10px}
+.quick-win h4{color:#3fb950;margin-bottom:4px}
+.quick-win p{color:#8b949e;font-size:0.85em;margin:0}
+.bar{height:8px;background:#21262d;border-radius:4px;overflow:hidden;margin-top:4px}
+.bar-fill{height:100%;border-radius:4px}
+.screenshot-container{text-align:center;margin:16px 0}
+.screenshot-container img{max-width:100%;max-height:480px;border-radius:8px;border:1px solid #30363d}
+.footer{text-align:center;color:#484f58;font-size:0.75em;margin-top:32px;padding-top:16px;border-top:1px solid #21262d}
+code{background:#21262d;padding:1px 4px;border-radius:3px;font-size:0.9em}</style>
+</head>
+<body>
+<div class="container">
+
+<h1>🔍 Frontend Performance Audit</h1>
+<div class="subtitle">
+<strong>Page:</strong> AI对话助手支持生成PDF并提供下载 &nbsp;|&nbsp;
+<strong>URL:</strong> <a href="https://nextformat.aiblank.top/" style="color:#58a6ff">https://nextformat.aiblank.top/</a> &nbsp;|&nbsp;
+<strong>Mode:</strong> Lighthouse (CI) &nbsp;|&nbsp;
+<strong>Time:</strong> 2026/5/22 17:03:52 &nbsp;|&nbsp;
+<strong>Run:</strong> 20260522T084619 &nbsp;|&nbsp;
+<strong>Stack:</strong> Next.js 16 + React 19 + Ant Design 6
+</div>
+
+<div class="screenshot-container"><img src="data:image/jpeg;base64,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" alt="page screenshot" /></div>
+
+<h2>📊 Overall Assessment</h2>
+<div class="grid-3">
+<div class="score-card"><div class="label">Grade</div><div class="value" style="color:#d29922">C</div></div>
+<div class="score-card"><div class="label">Performance</div><div class="value" style="color:#d29922">54</div></div>
+<div class="score-card"><div class="label">Accessibility</div><div class="value" style="color:#d29922">81</div></div>
+<div class="score-card"><div class="label">Best Practices</div><div class="value" style="color:#3fb950">100</div></div>
+<div class="score-card"><div class="label">SEO</div><div class="value" style="color:#3fb950">100</div></div>
+<div class="score-card"><div class="label">Page Weight</div><div class="value" style="color:#d29922">Total size was 771 KiB</div></div>
+</div>
+
+<h2>⏱️ Core Web Vitals & Metrics</h2>
+<div class="card">
+<table>
+<tr><th>Metric</th><th>Value</th><th>Status</th><th>Target</th></tr>
+<tr><td>First Contentful Paint</td><td><strong>1.1 s</strong></td><td><span class="badge good">✅ Good</span></td><td>&lt; 1.8s</td></tr>
+<tr><td>Largest Contentful Paint</td><td><strong>4.9 s</strong></td><td><span class="badge poor">❌ Poor</span></td><td>&lt; 2.5s</td></tr>
+<tr><td>Total Blocking Time</td><td><strong>330 ms</strong></td><td><span class="badge warn">⚠️ Warn</span></td><td>&lt; 200ms</td></tr>
+<tr><td>Cumulative Layout Shift</td><td><strong>0.446</strong></td><td><span class="badge poor">❌ Poor</span></td><td>&lt; 0.1</td></tr>
+<tr><td>Speed Index</td><td><strong>2.8 s</strong></td><td><span class="badge good">✅ Good</span></td><td>&lt; 3.4s</td></tr>
+<tr><td>Time to Interactive</td><td><strong>4.9 s</strong></td><td><span class="badge warn">⚠️ Warn</span></td><td>&lt; 3.8s</td></tr>
+</table>
+</div>
+
+<h2>📦 Resource Overview</h2>
+<div class="card">
+<div class="grid-3">
+
+<div class="score-card"><div class="label">Total Weight</div><div class="value" style="color:#d29922">Total size was 771 KiB</div></div>
+<div class="score-card"><div class="label">Network Requests</div><div class="value" style="color:#58a6ff">—</div></div>
+<div class="score-card"><div class="label">DOM Elements</div><div class="value" style="color:#3fb950">302 elements</div></div>
+</div>
+</div>
+
+<h2>⚠️ Issues by Severity</h2>
+<div class="card">
+<div class="issue p0">
+<span class="tag" style="color:#f85149">P0</span> <strong>Minimize main-thread work</strong>
+<p>Consider reducing the time spent parsing, compiling and executing JS. You may find delivering smaller JS payloads helps with this. [Learn how to minimize main-thread work](https://developer.chrome.com/docs/lighthouse/performance/mainthread-work-breakdown/) <em>(2.1 s)</em></p>
+</div>
+<div class="issue p0">
+<span class="tag" style="color:#f85149">P0</span> <strong>Largest Contentful Paint element</strong>
+<p>This is the largest contentful element painted within the viewport. [Learn more about the Largest Contentful Paint element](https://developer.chrome.com/docs/lighthouse/performance/lighthouse-largest-contentful-paint/) <em>(4,920 ms)</em></p>
+</div>
+<div class="issue p0">
+<span class="tag" style="color:#f85149">P0</span> <strong>Avoid large layout shifts</strong>
+<p>These are the largest layout shifts observed on the page. Each table item represents a single layout shift, and shows the element that shifted the most. Below each item are possible root causes that led to the layout shift. Some of these layout shifts may not be included in the CLS metric value due to [windowing](https://web.dev/articles/cls#what_is_cls). [Learn how to improve CLS](https://web.dev/articles/optimize-cls) <em>(6 layout shifts found)</em></p>
+</div>
+<div class="issue p0">
+<span class="tag" style="color:#f85149">P0</span> <strong>Missing source maps for large first-party JavaScript</strong>
+<p>Source maps translate minified code to the original source code. This helps developers debug in production. In addition, Lighthouse is able to provide further insights. Consider deploying source maps to take advantage of these benefits. [Learn more about source maps](https://developer.chrome.com/docs/devtools/javascript/source-maps/).</p>
+</div>
+<div class="issue p0">
+<span class="tag" style="color:#f85149">P0</span> <strong>ARIA input fields do not have accessible names</strong>
+<p>When an input field doesn't have an accessible name, screen readers announce it with a generic name, making it unusable for users who rely on screen readers. [Learn more about input field labels](https://dequeuniversity.com/rules/axe/4.10/aria-input-field-name).</p>
+</div>
+<div class="issue p0">
+<span class="tag" style="color:#f85149">P0</span> <strong>Buttons do not have an accessible name</strong>
+<p>When a button doesn't have an accessible name, screen readers announce it as &quot;button&quot;, making it unusable for users who rely on screen readers. [Learn how to make buttons more accessible](https://dequeuniversity.com/rules/axe/4.10/button-name).</p>
+</div>
+<div class="issue p0">
+<span class="tag" style="color:#f85149">P0</span> <strong>Background and foreground colors do not have a sufficient contrast ratio.</strong>
+<p>Low-contrast text is difficult or impossible for many users to read. [Learn how to provide sufficient color contrast](https://dequeuniversity.com/rules/axe/4.10/color-contrast).</p>
+</div>
+<div class="issue p0">
+<span class="tag" style="color:#f85149">P0</span> <strong>Form elements do not have associated labels</strong>
+<p>Labels ensure that form controls are announced properly by assistive technologies, like screen readers. [Learn more about form element labels](https://dequeuniversity.com/rules/axe/4.10/label).</p>
+</div>
+<div class="issue p0">
+<span class="tag" style="color:#f85149">P0</span> <strong>Reduce unused JavaScript</strong>
+<p>Reduce unused JavaScript and defer loading scripts until they are required to decrease bytes consumed by network activity. [Learn how to reduce unused JavaScript](https://developer.chrome.com/docs/lighthouse/performance/unused-javascript/). <em>(Est savings of 413 KiB)</em></p>
+</div>
+<div class="issue p0">
+<span class="tag" style="color:#f85149">P0</span> <strong>Layout shift culprits</strong>
+<p>Layout shifts occur when elements move absent any user interaction. [Investigate the causes of layout shifts](https://web.dev/articles/optimize-cls), such as elements being added, removed, or their fonts changing as the page loads.</p>
+</div>
+<div class="issue p0">
+<span class="tag" style="color:#f85149">P0</span> <strong>Forced reflow</strong>
+<p>A forced reflow occurs when JavaScript queries geometric properties (such as offsetWidth) after styles have been invalidated by a change to the DOM state. This can result in poor performance. Learn more about [forced reflows](https://developers.google.com/web/fundamentals/performance/rendering/avoid-large-complex-layouts-and-layout-thrashing#avoid-forced-synchronous-layouts) and possible mitigations.</p>
+</div>
+<div class="issue p0">
+<span class="tag" style="color:#f85149">P0</span> <strong>Network dependency tree</strong>
+<p>[Avoid chaining critical requests](https://developer.chrome.com/docs/lighthouse/performance/critical-request-chains) by reducing the length of chains, reducing the download size of resources, or deferring the download of unnecessary resources to improve page load.</p>
+</div>
+</div>
+
+<h2>✅ Positive Findings</h2>
+<div class="card">
+<ul style="list-style:none;padding:0">
+<li style="padding:6px 0">✅ <strong>Uses HTTPS</strong> — All sites should be protected with HTTPS, even ones that don't handle sensitive data. This includes avoiding [mixed cont…</li>
+<li style="padding:6px 0">✅ <strong>Has a `&lt;meta name=&quot;viewport&quot;&gt;` tag with `width` or `initial-scale`</strong> — A `&lt;meta name=&quot;viewport&quot;&gt;` not only optimizes your app for mobile screen sizes, but also prevents [a 300 millisecond del…</li>
+<li style="padding:6px 0">✅ <strong>No browser errors logged to the console</strong> — Errors logged to the console indicate unresolved problems. They can come from network request failures and other browser…</li>
+<li style="padding:6px 0">✅ <strong>Initial server response time was short</strong> — Keep the server response time for the main document short because all other requests depend on it. [Learn more about the…</li>
+<li style="padding:6px 0">✅ <strong>Avoid multiple page redirects</strong> — Redirects introduce additional delays before the page can be loaded. [Learn how to avoid page redirects](https://develop…</li>
+<li style="padding:6px 0">✅ <strong>Displays images with correct aspect ratio</strong> — Image display dimensions should match natural aspect ratio. [Learn more about image aspect ratio](https://developer.chro…</li>
+<li style="padding:6px 0">✅ <strong>Serves images with appropriate resolution</strong> — Image natural dimensions should be proportional to the display size and the pixel ratio to maximize image clarity. [Lear…</li>
+<li style="padding:6px 0">✅ <strong>Avoids deprecated APIs</strong> — Deprecated APIs will eventually be removed from the browser. [Learn more about deprecated APIs](https://developer.chrome…</li>
+<li style="padding:6px 0">✅ <strong>Avoids third-party cookies</strong> — Third-party cookies may be blocked in some contexts. [Learn more about preparing for third-party cookie restrictions](ht…</li>
+<li style="padding:6px 0">✅ <strong>JavaScript execution time</strong> — Consider reducing the time spent parsing, compiling, and executing JS. You may find delivering smaller JS payloads helps…</li>
+<li style="padding:6px 0">✅ <strong>Preconnect to required origins</strong> — Consider adding `preconnect` or `dns-prefetch` resource hints to establish early connections to important third-party or…</li>
+<li style="padding:6px 0">✅ <strong>All text remains visible during webfont loads</strong> — Leverage the `font-display` CSS feature to ensure text is user-visible while webfonts are loading. [Learn more about `fo…</li>
+<li style="padding:6px 0">✅ <strong>Image elements have explicit `width` and `height`</strong> — Set an explicit width and height on image elements to reduce layout shifts and improve CLS. [Learn how to set image dime…</li>
+<li style="padding:6px 0">✅ <strong>`[aria-*]` attributes match their roles</strong> — Each ARIA `role` supports a specific subset of `aria-*` attributes. Mismatching these invalidates the `aria-*` attribute…</li>
+</ul>
+</div>
+
+<h2>🚀 Optimization Recommendations</h2>
+<div class="card">
+<table>
+<tr><th>Priority</th><th>Action</th><th>Potential Savings</th><th>Effort</th></tr>
+<tr><td><span class="badge warn">P1</span></td><td>Reduce unused JavaScript</td><td>Est savings of 413 KiB</td><td>中</td></tr>
+<tr><td><span class="badge warn">P1</span></td><td>Initial server response time was short</td><td>Root document took 20 ms</td><td>中</td></tr>
+</table>
+</div>
+
+<h2>⚡ Quick Wins</h2>
+<div class="quick-win">
+<h4>1. Reduce unused JavaScript</h4>
+<p>Reduce unused JavaScript and defer loading scripts until they are required to decrease bytes consumed by network activity. [Learn how to reduce unused JavaScript](https://developer.chrome.com/docs/lighthouse/performance/unused-javascript/).</p>
+</div>
+<div class="quick-win">
+<h4>2. Initial server response time was short</h4>
+<p>Keep the server response time for the main document short because all other requests depend on it. [Learn more about the Time to First Byte metric](https://developer.chrome.com/docs/lighthouse/performance/time-to-first-byte/).</p>
+</div>
+
+<div class="footer">
+Generated by <strong>MediaFlow Agent Pipeline</strong> &nbsp;|&nbsp;
+Requirement: AI对话助手支持生成PDF并提供下载 &nbsp;|&nbsp;
+Analysis: Lighthouse JSON
+</div>
+
+</div>
+</body>
+</html>

@@ -1,153 +1,114 @@
 ---
 name: mediaflow-agent-pipeline
-description: MediaFlow 全流程 Agent 闭环 — 一句话需求、分析设计、代码与 Figma 还原、测试归档、Git 分支合并打 tag、Vercel 部署后性能报告。Use when 用户要搭建 agent、全流程、闭环、需求到上线、或 /agent-pipeline。
+description: MediaFlow 全流程 Agent 闭环 — 一句话需求、分析设计、代码与 Figma 还原、自测自愈、测试归档、Git、Vercel 性能报告。Use when 用户要搭建 agent、全流程、闭环、自测修复、或 /agent-pipeline。
 ---
 
 # MediaFlow Agent 全流程闭环
 
-将「一句话需求」驱动到「合并主分支 + Tag + Vercel 性能报告」的端到端流水线。脚本负责可重复步骤；Cursor Agent 负责分析、编码与 Figma 对齐。
+将「一句话需求」驱动到「合并主分支 + Tag + Vercel 性能报告」的端到端流水线。**必须自测并根据异常自行修复**，直至 `agent:verify` 通过。
 
 ## 快速启动
 
 ```bash
-# 1) 创建 Run + 需求单 + 设计分析
-pnpm agent:run -- "在侧栏增加 WebP 转 AVIF 工具"
-
-# 或分步
-pnpm agent:intake -- "一句话需求" [--figma <url>]
+pnpm agent:run -- "一句话需求"
+# 或
+pnpm agent:intake -- "需求"
 pnpm agent:design -- <runId>
+# 实现代码后 — 测试修复闭环（核心）
+pnpm agent:verify -- <runId> --prod https://nextformat.aiblank.top/
+pnpm agent:loop -- <runId> --prod https://nextformat.aiblank.top/   # 多轮直到通过
 ```
 
-在 Cursor 输入 **`/agent-pipeline`** 并附上同一句话需求，Agent 按下方五阶段执行。
+Cursor：**`/agent-pipeline`** + 一句话需求。
 
 ---
 
-## 五阶段协议（必须按序）
+## 测试-修复闭环（强制）
 
-### 阶段 1 · 一句话需求（Intake）
-
-**脚本**: `pnpm agent:intake -- "<需求>"`
-
-**Agent 必做**:
-
-1. 确认 `docs/agent/runs/<runId>/01-requirement.md` 已生成
-2. 补充「需求拆解」「验收标准」三节（具体、可测）
-3. 若用户给了 Figma 链接，写入 `state.json` 的 `figmaUrl`
-
-**产出**: `01-requirement.md`, `state.json`
-
----
-
-### 阶段 2 · 需求分析 + 设计方案（Analyze）
-
-**脚本**: `pnpm agent:design -- <runId>`
-
-**Agent 必做**:
-
-1. 阅读 `01-requirement.md` 与 `02-design-spec.md`
-2. 完善 `02-requirement-analysis.md`：问题陈述、方案对比、推荐方案、任务拆分
-3. 若涉及 UI，运行 ui-ux-pro-max（Skill 已脚本化）；必要时更新 `design.md` / `design-system/mediaflow/pages/*.md`
-4. 有 Figma 时 **先读 MCP**（`.cursor/skills/figma-to-code-sync`），输出 Figma 同步清单
-
-**产出**: `02-requirement-analysis.md`, `02-design-spec.md`
-
----
-
-### 阶段 3 · 代码实现 + 设计还原 + 测试报告（Implement）
-
-**Agent 必做**（本阶段无全自动脚本，由 Agent 写代码）:
-
-1. 从 `main`/`master` 切功能分支: `pnpm agent:git -- branch <runId>`
-2. 按分析文档实现；UI 遵循 `.cursor/rules/mediaflow-ui-design.mdc`
-3. Figma 还原：MCP → token → 组件，禁止凭感觉补值
-4. 实现完成后运行: `pnpm agent:test -- <runId>`
-5. 在 `03-test-report.md` 填写「Agent 实现备注」：改动文件、决策、已知限制
-6. 用户确认后 `git add` + `git commit`（遵循仓库 commit 风格）
-
-**产出**: 代码变更 + `03-test-report.md`
-
----
-
-### 阶段 4 · Git 分支、检查、合并、Tag（Git）
+每次改代码后 **必须** 运行验证；失败则 **必须** 读报告、改代码、重跑，**不得** 带着失败项合并。
 
 ```bash
-pnpm agent:git -- check <runId>          # lint + build 预检
-# 用户明确要求合并时:
-pnpm agent:git -- merge <runId> --tag v0.1.0 --confirm
+pnpm agent:verify -- <runId> [--prod <url>] [--skip-build] [--full-lint]
 ```
 
-**Agent 规则**:
+| 检查项 | 说明 |
+|--------|------|
+| ESLint | 默认仅 `chat` / `pdf` / `chat-pdf-client` 范围 |
+| Build | `pnpm build` |
+| PDF 本地 | `generateChatPdfBuffer` 冒烟（无 pdfkit AFM） |
+| PDF 线上 | `POST /api/chat/pdf`（`--prod` 时） |
+| /chat 页面 | GET 可达（`--prod` 时） |
 
-- **禁止** 未经用户确认执行 `merge --confirm`
-- 合并前必须 `check` 通过
-- Tag 建议语义化：`v<major>.<minor>.<patch>` 或与用户约定
-- 合并后提示: `git push origin main --tags`
+**失败产物**: `docs/agent/runs/<runId>/04-verify-report.md` + `04-verify-report.json`（含 `hint` 修复方向）
 
-**产出**: 合并记录写入 `state.json.phases.git`
+### Agent 自愈协议（必须遵守）
+
+1. 运行 `pnpm agent:verify -- <runId> --prod https://nextformat.aiblank.top/`
+2. 若 exit code ≠ 0：打开 `04-verify-report.md`，逐条处理 **失败详情与修复提示**
+3. 修改代码（根因修复，禁止只改报告糊弄）
+4. 再次 `agent:verify`，最多循环 **5 轮**（可用 `agent:loop`）
+5. **仅当全部 ✅** 后：写 `03-test-report.md`、`agent:git -- check`、合并（需用户确认）
+
+### 常见异常 → 修复
+
+| 错误特征 | 修复 |
+|----------|------|
+| `Helvetica.afm` / `ENOENT` + pdfkit | 已弃用 pdfkit，用 `pdf-lib`；`serverExternalPackages` 含 pdf-lib |
+| 字体 / 无法加载中文 | `pnpm chat-pdf:font`，build 含 ensure 脚本 |
+| PDF API 非 200 | 查 `src/app/api/chat/pdf/route.js` 与 Vercel 日志 |
+| Build 失败 | 按构建日志修导入/类型/Next 配置 |
+| /chat 5xx | 查部署与环境变量 |
 
 ---
 
-### 阶段 5 · Vercel 构建后项目检测 + 性能报告（Deploy）
+## 五阶段协议
+
+### 阶段 1 · Intake
+
+`pnpm agent:intake -- "<需求>"` → 补充 `01-requirement.md` 验收标准
+
+### 阶段 2 · Analyze
+
+`pnpm agent:design -- <runId>` → 完善 `02-requirement-analysis.md`
+
+### 阶段 3 · Implement + Verify
+
+1. `pnpm agent:git -- branch <runId>`
+2. 实现功能
+3. **`pnpm agent:verify` → 失败则修复 → 直至通过**
+4. `pnpm agent:test -- <runId> --prod https://nextformat.aiblank.top/`
+5. 填写 `03-test-report.md` 实现备注
+
+### 阶段 4 · Git
 
 ```bash
-# 部署完成后（或提供预览 URL）
-pnpm agent:perf -- <runId> https://your-app.vercel.app
+pnpm agent:git -- check <runId>    # 内含 verify + 线上冒烟
+pnpm agent:git -- merge <runId> --tag v0.x.x --confirm   # 需用户确认
+```
+
+### 阶段 5 · Deploy
+
+```bash
+pnpm agent:perf -- <runId> https://nextformat.aiblank.top/
 pnpm agent:archive -- <runId>
 ```
-
-**Agent 必做**:
-
-1. 确认 Vercel 部署成功（`vercel ls` / 用户提供 URL）
-2. 阅读 `05-perf-report.md`，补充「建议优化项」
-3. 运行 `pnpm agent:archive -- <runId>` 归档到 `docs/agent/archive/<runId>/`
-
-**产出**: `05-perf-report.md`, `docs/agent/archive/<runId>/INDEX.md`
 
 ---
 
 ## 状态机
 
-读取 `docs/agent/runs/<runId>/state.json`：
+| phase | status |
+|-------|--------|
+| verify | pending → completed / **needs-fix** |
+| implement | 依赖 verify 通过 |
 
-| phase | phases.*.status |
-|-------|-----------------|
-| intake | completed |
-| analyze | pending → completed |
-| implement | pending → completed / needs-fix |
-| git | pending → in-progress → completed |
-| deploy | pending → completed |
-
-当前阶段字段: `state.phase`
-
----
-
-## 技能依赖
-
-| 场景 | Skill |
-|------|-------|
-| UI/设计系统 | `.cursor/skills/ui-ux-pro-max` |
-| Figma 还原 | `.cursor/skills/figma-to-code-sync` |
-| UI 规则 | `.cursor/rules/mediaflow-ui-design.mdc` |
-| Vercel 部署/CLI | Vercel `vercel-cli` skill |
-| 合并前 CI | `pnpm agent:git -- check` |
-
----
-
-## 对话模板（给用户）
-
-```
-【Agent 流水线 · Run {runId}】
-✅ 阶段 N 完成: <摘要>
-📁 产物: docs/agent/runs/{runId}/...
-⏭ 下一步: <命令或需用户确认的操作>
-```
+`state.phases.verify` 记录 `attempt` 与 `summary`。
 
 ---
 
 ## 反模式
 
-- 跳过 `01-requirement.md` 验收标准直接写代码
-- 未跑 `agent:test` 就合并
-- 无 `--confirm` 合并到主分支
-- Figma 未读 MCP 就硬编码 hex
-- 把 `docs/agent/runs/*` 里的 secrets 提交进 Git
+- 未跑 verify 就合并
+- 验证失败不读 `04-verify-report` 硬提交
+- 跳过线上 `--prod` 冒烟（PDF 类需求必测）
+- 无 `--confirm` 合并主分支

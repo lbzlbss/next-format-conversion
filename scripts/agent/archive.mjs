@@ -24,7 +24,14 @@ const runDir = getRunDir(runId);
 const archiveDir = path.join(AGENT_ROOT, "archive", runId);
 fs.mkdirSync(archiveDir, { recursive: true });
 
-const files = fs.readdirSync(runDir).filter((f) => f.endsWith(".md") || f === "state.json");
+const files = fs.readdirSync(runDir).filter(
+  (f) =>
+    f.endsWith(".md") ||
+    f.endsWith(".html") ||
+    f.endsWith(".json") ||
+    f === "state.json" ||
+    f === "lighthouse-report.json",
+);
 for (const file of files) {
   fs.copyFileSync(path.join(runDir, file), path.join(archiveDir, file));
 }

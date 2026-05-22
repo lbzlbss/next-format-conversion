@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * Phase 5: Vercel 部署后性能 / 项目检测报告
+ * Phase 5: Vercel 部署后性能 / 项目检测报告（Markdown + HTML）
  */
 import fs from "node:fs";
 import path from "node:path";
@@ -10,10 +10,17 @@ import {
   loadRun,
   REPO_ROOT,
   saveRun,
+  slugify,
   tryRunCmd,
   cliArgs,
   updatePhase,
 } from "./lib/run-context.mjs";
+import {
+  performanceReportFileName,
+  writePerformanceAuditHtml,
+} from "./lib/perf-html-report.mjs";
+
+const PERFORMANCE_REPORTS_DIR = path.join(REPO_ROOT, "docs/agent/performance-reports");
 
 const args = cliArgs(process.argv.slice(2));
 const runId = args[0];
@@ -49,45 +56,94 @@ if (build.ok) {
       return total;
     };
     const bytes = statDir(nextDir);
-    buildStats = `.next 产物约 ${(bytes / 1024 / 1024).toFixed(2)} MB`;
+    buildStats = `.next 产物约 ${(bytes / 1024 / 1024).toFixed(2)} MB（含本地缓存，生产以 Vercel 为准）`;
   } else {
     buildStats = "build 成功，未找到 .next 目录统计";
   }
 }
 
-let vercelInfo = "未配置部署 URL。合并后执行:\n`vercel --prod` 或推送触发 CI，再运行:\n`pnpm agent:perf -- <runId> https://your-app.vercel.app`";
+let vercelInfo = "未配置部署 URL";
 const vercelLs = tryRunCmd("vercel ls --limit 3 2>/dev/null || npx vercel ls 2>/dev/null", {
   silent: true,
 });
 if (vercelLs.ok && vercelLs.output) {
-  vercelInfo = `最近部署 (vercel ls):\n\`\`\`\n${vercelLs.output.trim()}\n\`\`\``;
+  vercelInfo = `最近部署:\n\`\`\`\n${vercelLs.output.trim().split("\n").slice(0, 5).join("\n")}\n\`\`\``;
 }
 
-let lighthouse = "跳过（未安装 lighthouse 或未提供 HTTPS URL）";
-const targetUrl = deployUrl?.startsWith("http") ? deployUrl : deployUrl ? `https://${deployUrl}` : null;
+const targetUrl = deployUrl?.startsWith("http")
+  ? deployUrl
+  : deployUrl
+    ? `https://${deployUrl}`
+    : null;
+
+let lighthouseMd = "跳过（未提供 HTTPS URL）";
+let htmlReportRel = null;
+let htmlReportAbs = null;
+
 if (targetUrl) {
+  const lhJsonPath = path.join(runDir, "lighthouse-report.json");
   const lh = tryRunCmd(
-    `npx lighthouse ${targetUrl} --only-categories=performance,accessibility,best-practices,seo --output=json --quiet --chrome-flags="--headless" 2>/dev/null`,
+    `npx lighthouse "${targetUrl.replace(/"/g, '\\"')}" --only-categories=performance,accessibility,best-practices,seo --output=json --output-path="${lhJsonPath}" --quiet --chrome-flags="--headless --no-sandbox" 2>/dev/null`,
     { silent: true },
   );
-  if (lh.ok) {
+
+  let lhr = null;
+  if (lh.ok && fs.existsSync(lhJsonPath)) {
     try {
-      const json = JSON.parse(lh.output);
-      const cats = json.categories || {};
-      lighthouse = ["performance", "accessibility", "best-practices", "seo"]
-        .map((k) => {
-          const score = cats[k]?.score;
-          return `- **${k}**: ${score != null ? Math.round(score * 100) : "n/a"}`;
-        })
-        .join("\n");
-    } catch {
-      lighthouse = "Lighthouse 已运行但解析失败，请查看 CLI 输出";
+      const raw = JSON.parse(fs.readFileSync(lhJsonPath, "utf8"));
+      lhr = raw.lhr || raw;
+    } catch (e) {
+      console.warn("[perf] Lighthouse JSON 解析失败:", e.message);
     }
-  } else {
-    lighthouse = `Lighthouse 未运行（可手动: npx lighthouse ${targetUrl} --view）\n${lh.error?.slice(0, 500)}`;
   }
+
+  if (lhr) {
+    const cats = lhr.categories || {};
+    lighthouseMd = ["performance", "accessibility", "best-practices", "seo"]
+      .map((k) => {
+        const score = cats[k]?.score;
+        return `- **${k}**: ${score != null ? Math.round(score * 100) : "n/a"}`;
+      })
+      .join("\n");
+
+    const pageSlug = slugify(state.slug || state.requirement);
+    const htmlName = performanceReportFileName(pageSlug);
+    htmlReportAbs = path.join(PERFORMANCE_REPORTS_DIR, htmlName);
+    htmlReportRel = `docs/agent/performance-reports/${htmlName}`;
+
+    writePerformanceAuditHtml({
+      outputPath: htmlReportAbs,
+      meta: {
+        runId,
+        requirement: state.requirement,
+        pageSlug,
+        pageLabel: state.requirement,
+        url: lhr.finalUrl || targetUrl,
+        stack: "Next.js 16 + React 19 + Ant Design 6",
+      },
+      lhr,
+    });
+
+    fs.copyFileSync(htmlReportAbs, path.join(runDir, htmlName));
+    console.log(`   HTML 报告: ${htmlReportRel}`);
+  } else {
+    lighthouseMd = `Lighthouse 未成功（可手动: npx lighthouse ${targetUrl} --view）\n${lh.error?.slice(0, 400) || ""}`;
+  }
+
   state.vercelDeploymentUrl = targetUrl;
 }
+
+const htmlSection = htmlReportRel
+  ? [
+      "## HTML 性能审计报告",
+      "",
+      `已按团队模板生成（参考 performance-audit 样式）：`,
+      "",
+      `- **文件**: [\`${htmlReportRel}\`](../../performance-reports/${path.basename(htmlReportRel)})`,
+      `- **打开**: 在浏览器中直接打开上述 HTML 文件`,
+      "",
+    ].join("\n")
+  : "";
 
 const projectChecks = [
   "## 构建与体积",
@@ -96,21 +152,24 @@ const projectChecks = [
   "",
   buildStats,
   "",
-  "## Vercel 部署",
+  "## 正式环境",
+  "",
+  targetUrl ? `**域名**: [${targetUrl}](${targetUrl})` : "（无 URL）",
   "",
   vercelInfo,
   "",
-  targetUrl ? `检测 URL: ${targetUrl}` : "（无线上 URL — 仅本地构建报告）",
+  htmlSection,
+  "## Lighthouse",
   "",
-  "## Lighthouse（可选）",
+  lighthouseMd,
   "",
-  lighthouse,
+  "## 建议优化项",
   "",
-  "## 建议优化项（Agent 填写）",
+  "详见 HTML 报告中的 **Issues / Recommendations / Quick Wins** 章节。",
   "",
-  "- 检查 LCP 相关大图是否走 `next/image`",
-  "- 确认 Ant Design 按需/树摇无冗余",
-  "- API 路由冷启动与 ffmpeg 依赖体积",
+  "- 首页工具组件 `dynamic()` 懒加载，降低 Performance 分数压力",
+  "- 大图使用 `next/image`，字体 `display=swap`",
+  "- `/api/chat/pdf` Node 运行时注意冷启动与字体体积",
   "",
 ].join("\n");
 
@@ -124,10 +183,14 @@ copyTemplate("perf-report.md", reportPath, {
 state.phases.deploy = {
   status: build.ok ? "completed" : "partial",
   perfReport: "05-perf-report.md",
+  perfReportHtml: htmlReportRel,
   deploymentUrl: targetUrl,
 };
 saveRun(state);
 updatePhase(runId, "deploy", state.phases.deploy);
 
-console.log(`✅ 性能报告: ${reportPath}`);
+console.log(`\n✅ Markdown: ${reportPath}`);
+if (htmlReportAbs) {
+  console.log(`✅ HTML:   ${htmlReportAbs}`);
+}
 console.log(`\n归档: pnpm agent:archive -- ${runId}\n`);

@@ -1,25 +1,30 @@
-# Agent 全流程闭环
+# Agent 全流程闭环（含自测自愈）
 
-执行 **MediaFlow Agent Pipeline**（`.cursor/skills/mediaflow-agent-pipeline/SKILL.md`）。
+阅读 `.cursor/skills/mediaflow-agent-pipeline/SKILL.md`。
 
-## 用户输入
+## 强制：测试-修复闭环
 
-用户应提供 **一句话需求**（可选 Figma 链接）。
+实现或修 bug 后 **必须**：
 
-## 你必须执行
+```bash
+pnpm agent:verify -- <runId> --prod https://nextformat.aiblank.top/
+```
 
-1. **读取 Skill**：`.cursor/skills/mediaflow-agent-pipeline/SKILL.md`（完整五阶段）
-2. **若尚无 runId**：运行  
-   `pnpm agent:intake -- "<用户的一句话需求>"`  
-   （有 Figma 则加 `--figma <url>`）
-3. **按 Skill 当前阶段推进**，每阶段结束汇报产物路径与下一步命令
-4. **阶段 3** 写代码前：`pnpm agent:git -- branch <runId>`
-5. **阶段 3 结束**：`pnpm agent:test -- <runId>` 并完善测试报告
-6. **阶段 4**：仅当用户明确要求合并时，`pnpm agent:git -- merge <runId> --tag <ver> --confirm`
-7. **阶段 5**：部署后 `pnpm agent:perf -- <runId> <url>` 与 `pnpm agent:archive -- <runId>`
+失败则：
 
-## 约束
+1. 读 `docs/agent/runs/<runId>/04-verify-report.md`
+2. **根据异常自行修复代码**
+3. 重跑 verify，直至全部通过（最多 5 轮，可用 `pnpm agent:loop`）
 
-- 合并主分支、打 tag 必须用户确认
-- UI 改动遵循 `design.md` 与 figma-to-code-sync
-- 用中文汇报阶段进度
+**禁止** 在 verify 失败时合并主分支。
+
+## 流程
+
+1. `pnpm agent:intake -- "<需求>"`（无 runId 时）
+2. `pnpm agent:design -- <runId>`
+3. 写代码 → **verify 循环**
+4. `pnpm agent:test -- <runId> --prod https://nextformat.aiblank.top/`
+5. 用户确认后 `pnpm agent:git -- merge ... --confirm`
+6. `pnpm agent:perf` + `pnpm agent:archive`
+
+正式域名：**https://nextformat.aiblank.top/**

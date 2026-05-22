@@ -17,9 +17,19 @@ flowchart LR
 |------|--------|--------------|
 | 1 Intake | `pnpm agent:intake` | 补充验收标准 |
 | 2 Analyze | `pnpm agent:design` | 需求分析文档、Figma 清单 |
-| 3 Implement | `pnpm agent:test` | 写代码、还原设计稿 |
-| 4 Git | `pnpm agent:git` | 提交、确认后合并 |
+| 3 Implement | `pnpm agent:verify` / `agent:loop` | 写代码、**失败则按报告自愈** |
+| 3b Test | `pnpm agent:test` | 汇总 verify + 人工清单 |
+| 4 Git | `pnpm agent:git` | check 含线上冒烟，确认后合并 |
 | 5 Deploy | `pnpm agent:perf` | 解读报告、优化建议 |
+
+## 测试-修复闭环（核心）
+
+```bash
+pnpm agent:verify -- <runId> --prod https://nextformat.aiblank.top/
+pnpm agent:loop -- <runId> --prod https://nextformat.aiblank.top/   # 最多 5 轮
+```
+
+失败时阅读 `docs/agent/runs/<runId>/04-verify-report.md`，Agent **必须** 根据 `hint` 改代码后重跑，直至通过。
 
 ## 快速开始
 
@@ -53,11 +63,20 @@ pnpm agent:archive -- 20260522T120000
 
 ```
 docs/agent/
-├── README.md           # 本文件
-├── templates/          # 文档模板
-├── runs/<runId>/       # 进行中产物（可 gitignore 部分文件）
-└── archive/<runId>/    # 完成后归档
+├── README.md                    # 本文件
+├── templates/                   # 文档模板
+├── performance-reports/         # HTML 性能审计（参考 performance-audit-*.html 样式）
+├── runs/<runId>/                # 进行中产物
+└── archive/<runId>/             # 完成后归档
 ```
+
+### HTML 性能报告
+
+`pnpm agent:perf` 会在 `docs/agent/performance-reports/` 生成：
+
+`performance-audit-<slug>-YYYYMMDD.html`
+
+版式对齐团队参考稿（深色主题、Score Cards、Core Metrics、Issues、Quick Wins），数据来自 Lighthouse。
 
 ## 环境
 

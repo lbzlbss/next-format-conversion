@@ -1,7 +1,8 @@
-import PDFDocument from "pdfkit";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { PDFDocument, rgb } from "pdf-lib";
+import fontkit from "@pdf-lib/fontkit";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(__dirname, "../../../../../..");
@@ -11,11 +12,16 @@ const LOCAL_FONTS = [
 ];
 
 const REMOTE_FONTS = [
-  "https://fonts.bunny.net/noto-sans-sc/files/noto-sans-sc-chinese-simplified-400-normal.ttf",
   "https://cdn.jsdelivr.net/gh/notofonts/noto-cjk@main/Sans/OTF/SimplifiedChinese/NotoSansCJKsc-Regular.otf",
+  "https://fonts.bunny.net/noto-sans-sc/files/noto-sans-sc-chinese-simplified-400-normal.ttf",
 ];
 
-/** @type {Buffer|null} */
+const PAGE_WIDTH = 595.28;
+const PAGE_HEIGHT = 841.89;
+const MARGIN = 52;
+const CONTENT_WIDTH = PAGE_WIDTH - MARGIN * 2;
+
+/** @type {Uint8Array|null} */
 let cachedFont = null;
 
 async function loadChineseFont() {
@@ -23,7 +29,7 @@ async function loadChineseFont() {
 
   const localPath = LOCAL_FONTS.find((p) => fs.existsSync(p));
   if (localPath) {
-    cachedFont = fs.readFileSync(localPath);
+    cachedFont = new Uint8Array(fs.readFileSync(localPath));
     return cachedFont;
   }
 
@@ -32,7 +38,7 @@ async function loadChineseFont() {
     try {
       const res = await fetch(url, { signal: AbortSignal.timeout(60000) });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      cachedFont = Buffer.from(await res.arrayBuffer());
+      cachedFont = new Uint8Array(await res.arrayBuffer());
       return cachedFont;
     } catch (e) {
       lastErr = e;
@@ -40,8 +46,74 @@ async function loadChineseFont() {
   }
 
   throw new Error(
-    `无法加载中文字体。请将 NotoSansSC-Regular.ttf 放到 public/fonts/，或检查网络。${lastErr?.message || ""}`,
+    `无法加载中文字体。请将 NotoSansSC-Regular.otf 放到 public/fonts/，或检查网络。${lastErr?.message || ""}`,
   );
+}
+
+/**
+ * @param {string} text
+ * @param {import('pdf-lib').PDFFont} font
+ * @param {number} fontSize
+ * @param {number} maxWidth
+ */
+function wrapText(text, font, fontSize, maxWidth) {
+  const lines = [];
+  for (const paragraph of text.split("\n")) {
+    if (!paragraph) {
+      lines.push("");
+      continue;
+    }
+    let line = "";
+    for (const char of paragraph) {
+      const next = line + char;
+      const width = font.widthOfTextAtSize(next, fontSize);
+      if (width > maxWidth && line.length > 0) {
+        lines.push(line);
+        line = char;
+      } else {
+        line = next;
+      }
+    }
+    if (line) lines.push(line);
+  }
+  return lines;
+}
+
+/**
+ * @param {Object} ctx
+ * @param {import('pdf-lib').PDFPage} ctx.page
+ * @param {import('pdf-lib').PDFFont} ctx.font
+ * @param {import('pdf-lib').PDFDocument} ctx.pdfDoc
+ * @param {number} ctx.y
+ * @param {string} text
+ * @param {Object} opts
+ */
+function drawLines(ctx, text, opts) {
+  const {
+    fontSize = 11,
+    color = rgb(0.06, 0.09, 0.15),
+    lineHeight = fontSize * 1.45,
+    indent = 0,
+  } = opts;
+
+  const lines = wrapText(text, ctx.font, fontSize, CONTENT_WIDTH - indent);
+  for (const line of lines) {
+    if (ctx.y < MARGIN + lineHeight) {
+      ctx.page = ctx.pdfDoc.addPage([PAGE_WIDTH, PAGE_HEIGHT]);
+      ctx.y = PAGE_HEIGHT - MARGIN;
+    }
+    if (line) {
+      ctx.page.drawText(line, {
+        x: MARGIN + indent,
+        y: ctx.y,
+        size: fontSize,
+        font: ctx.font,
+        color,
+      });
+    }
+    ctx.y -= lineHeight;
+  }
+  return ctx;
 }
 
 /**
@@ -55,35 +127,37 @@ export async function generateChatPdfBuffer({
   messages,
   includeThinking = true,
 }) {
-  const font = await loadChineseFont();
-  const doc = new PDFDocument({
-    size: "A4",
-    margins: { top: 56, bottom: 56, left: 52, right: 52 },
-    info: {
-      Title: title,
-      Author: "MediaFlow AI 对话助手",
-    },
+  const fontBytes = await loadChineseFont();
+  const pdfDoc = await PDFDocument.create();
+  pdfDoc.registerFontkit(fontkit);
+  const font = await pdfDoc.embedFont(fontBytes, { subset: true });
+
+  pdfDoc.setTitle(title);
+  pdfDoc.setAuthor("MediaFlow AI 对话助手");
+
+  const page = pdfDoc.addPage([PAGE_WIDTH, PAGE_HEIGHT]);
+  const ctx = { pdfDoc, page, font, y: PAGE_HEIGHT - MARGIN };
+
+  const titleWidth = font.widthOfTextAtSize(title, 18);
+  page.drawText(title, {
+    x: (PAGE_WIDTH - titleWidth) / 2,
+    y: ctx.y,
+    size: 18,
+    font,
+    color: rgb(0.06, 0.09, 0.15),
   });
+  ctx.y -= 28;
 
-  doc.registerFont("body", font);
-  doc.registerFont("body-bold", font);
-
-  const chunks = [];
-  doc.on("data", (c) => chunks.push(c));
-
-  const ended = new Promise((resolve, reject) => {
-    doc.on("end", () => resolve(Buffer.concat(chunks)));
-    doc.on("error", reject);
+  const timeStr = `导出时间：${new Date().toLocaleString("zh-CN")}`;
+  const timeWidth = font.widthOfTextAtSize(timeStr, 10);
+  page.drawText(timeStr, {
+    x: (PAGE_WIDTH - timeWidth) / 2,
+    y: ctx.y,
+    size: 10,
+    font,
+    color: rgb(0.39, 0.45, 0.55),
   });
-
-  doc.font("body").fontSize(18).text(title, { align: "center" });
-  doc.moveDown(0.5);
-  doc
-    .fontSize(10)
-    .fillColor("#64748b")
-    .text(`导出时间：${new Date().toLocaleString("zh-CN")}`, { align: "center" });
-  doc.fillColor("#0f172a");
-  doc.moveDown(1.5);
+  ctx.y -= 36;
 
   for (const msg of messages) {
     if (!msg?.content?.trim()) continue;
@@ -91,48 +165,77 @@ export async function generateChatPdfBuffer({
     const roleLabel =
       msg.role === "user" ? "用户" : msg.role === "assistant" ? "助手" : msg.role;
 
-    doc.font("body-bold").fontSize(12).fillColor("#1e293b").text(`【${roleLabel}】`);
-    doc.moveDown(0.35);
-
-    doc.font("body").fontSize(11).fillColor("#0f172a").text(msg.content.trim(), {
-      align: "left",
-      lineGap: 4,
+    drawLines(ctx, `【${roleLabel}】`, {
+      fontSize: 12,
+      color: rgb(0.12, 0.16, 0.23),
+      lineHeight: 16,
     });
+    ctx.y -= 4;
+
+    drawLines(ctx, msg.content.trim(), { fontSize: 11, lineHeight: 16 });
 
     if (includeThinking && msg.thinking?.trim()) {
-      doc.moveDown(0.5);
-      doc.fontSize(9).fillColor("#475569").text("思考过程：", { continued: false });
-      doc.text(msg.thinking.trim(), { lineGap: 3 });
-      doc.fillColor("#0f172a");
+      ctx.y -= 6;
+      drawLines(ctx, "思考过程：", {
+        fontSize: 9,
+        color: rgb(0.28, 0.33, 0.41),
+        lineHeight: 13,
+      });
+      drawLines(ctx, msg.thinking.trim(), {
+        fontSize: 9,
+        color: rgb(0.28, 0.33, 0.41),
+        lineHeight: 13,
+      });
     }
 
     if (msg.sources?.length > 0) {
-      doc.moveDown(0.5);
-      doc.fontSize(9).fillColor("#1d4ed8").text("参考 Wiki：");
+      ctx.y -= 6;
+      drawLines(ctx, "参考 Wiki：", {
+        fontSize: 9,
+        color: rgb(0.11, 0.31, 0.85),
+        lineHeight: 13,
+      });
       for (const s of msg.sources) {
-        doc.text(`· ${s.title || s.slug || "条目"}`, { indent: 12 });
+        drawLines(ctx, `· ${s.title || s.slug || "条目"}`, {
+          fontSize: 9,
+          color: rgb(0.11, 0.31, 0.85),
+          lineHeight: 13,
+          indent: 12,
+        });
       }
-      doc.fillColor("#0f172a");
     }
 
-    doc.moveDown(1.2);
-    doc
-      .strokeColor("#e2e8f0")
-      .lineWidth(0.5)
-      .moveTo(doc.page.margins.left, doc.y)
-      .lineTo(doc.page.width - doc.page.margins.right, doc.y)
-      .stroke();
-    doc.moveDown(1);
+    ctx.y -= 8;
+    if (ctx.y < MARGIN + 20) {
+      ctx.page = pdfDoc.addPage([PAGE_WIDTH, PAGE_HEIGHT]);
+      ctx.y = PAGE_HEIGHT - MARGIN;
+    } else {
+      const y = ctx.y;
+      ctx.page.drawLine({
+        start: { x: MARGIN, y },
+        end: { x: PAGE_WIDTH - MARGIN, y },
+        thickness: 0.5,
+        color: rgb(0.89, 0.91, 0.94),
+      });
+      ctx.y -= 16;
+    }
   }
 
-  doc.fontSize(9).fillColor("#94a3b8").text("由 MediaFlow AI 对话助手导出", {
-    align: "center",
+  if (ctx.y < MARGIN + 20) {
+    ctx.page = pdfDoc.addPage([PAGE_WIDTH, PAGE_HEIGHT]);
+    ctx.y = PAGE_HEIGHT - MARGIN;
+  }
+
+  const footer = "由 MediaFlow AI 对话助手导出";
+  const footerWidth = font.widthOfTextAtSize(footer, 9);
+  ctx.page.drawText(footer, {
+    x: (PAGE_WIDTH - footerWidth) / 2,
+    y: Math.max(MARGIN, ctx.y - 8),
+    size: 9,
+    font,
+    color: rgb(0.58, 0.64, 0.72),
   });
 
-  doc.end();
-  return ended;
-}
-
-export function bufferToWebReadable(buffer) {
-  return Readable.toWeb(Readable.from(buffer));
+  const bytes = await pdfDoc.save();
+  return Buffer.from(bytes);
 }

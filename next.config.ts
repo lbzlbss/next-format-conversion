@@ -30,6 +30,8 @@ const nextConfig: NextConfig = {
     "sharp",
     "protobufjs",
     "jszip",
+    "pdf-lib",
+    "@pdf-lib/fontkit",
   ],
   experimental: {
     serverActions: {
