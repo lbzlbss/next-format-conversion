@@ -5,6 +5,7 @@ import { Button, Input, Avatar } from 'antd';
 import { SendOutlined, RobotOutlined, UserOutlined, BulbOutlined } from '@ant-design/icons';
 import { useChatStream } from '../../hooks/useChatStream';
 import WikiSources from './WikiSources';
+import ChatPdfButton from './ChatPdfButton';
 
 const { TextArea } = Input;
 
@@ -12,7 +13,7 @@ const WELCOME_MESSAGE = {
   id: 'welcome',
   role: 'assistant',
   content:
-    '你好，我是 MediaFlow 的网站全能助手，兼具 AI 创作专家与八字命理师双重身份。\n\n你可以问我：\n· 文生图/图生图、视频转换（静止图转视频、参数设置）\n· 生辰八字简析与转运建议\n· 操作步骤与参数（如 ControlNet、Seed、运动强度、重绘幅度）',
+    '你好，我是 MediaFlow 的网站全能助手，兼具 AI 创作专家与八字命理师双重身份。\n\n你可以问我：\n· 文生图/图生图、视频转换（静止图转视频、参数设置）\n· 生辰八字简析与转运建议\n· 操作步骤与参数（如 ControlNet、Seed、运动强度、重绘幅度）\n· 对话结束后可「导出对话 PDF」或单条回复导出 PDF 留存',
 };
 
 export default function ChatPanel({ variant = 'page', className = '', toolKey = null }) {
@@ -89,6 +90,16 @@ export default function ChatPanel({ variant = 'page', className = '', toolKey = 
                   {m.role === 'assistant' && m.sources?.length > 0 && (
                     <WikiSources sources={m.sources} />
                   )}
+                  {m.role === 'assistant' && m.id !== 'welcome' && (
+                    <div className="mt-2 flex justify-end border-t border-mf-border/60 pt-2">
+                      <ChatPdfButton
+                        mode="single"
+                        messages={messages}
+                        singleMessage={m}
+                        type="link"
+                      />
+                    </div>
+                  )}
                 </div>
               </div>
             </div>
@@ -141,6 +152,9 @@ export default function ChatPanel({ variant = 'page', className = '', toolKey = 
             : 'shrink-0 border-t border-mf-border bg-mf-surface p-3'
         }
       >
+        <div className="mx-auto mb-2 flex max-w-3xl justify-end">
+          <ChatPdfButton mode="full" messages={messages} size="small" />
+        </div>
         <div className="mx-auto flex max-w-3xl gap-3">
           <TextArea
             value={input}

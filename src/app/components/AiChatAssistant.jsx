@@ -3,102 +3,38 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { Button, Input, Avatar } from 'antd';
 import { SendOutlined, RobotOutlined, UserOutlined, CloseOutlined } from '@ant-design/icons';
+import { useChatStream } from '../hooks/useChatStream';
+import ChatPdfButton from './chat/ChatPdfButton';
 
 const { TextArea } = Input;
 
+const WELCOME_MESSAGE = {
+  id: 'welcome',
+  role: 'assistant',
+  content:
+    '你好，我是 MediaFlow 的网站全能助手，兼具 AI 创作专家与八字命理师双重身份。\n\n你可以问我：\n· 文生图/图生图、视频转换（静止图转视频、参数设置）\n· 生辰八字简析与转运建议\n· 操作步骤与参数（如 ControlNet、Seed、运动强度、重绘幅度）\n· 支持导出对话或单条回复为 PDF 下载',
+};
+
 const AiChatAssistant = () => {
   const [open, setOpen] = useState(false);
-  const [messages, setMessages] = useState([
-    {
-      id: 'welcome',
-      role: 'assistant',
-      content: '你好，我是 MediaFlow 的网站全能助手，兼具 AI 创作专家与八字命理师双重身份。\n\n你可以问我：\n· 文生图/图生图、视频转换（静止图转视频、参数设置）\n· 生辰八字简析与转运建议\n· 操作步骤与参数（如 ControlNet、Seed、运动强度、重绘幅度）',
-    },
-  ]);
+  const [messages, setMessages] = useState([WELCOME_MESSAGE]);
   const [input, setInput] = useState('');
-  const [loading, setLoading] = useState(false);
-  const [streamingContent, setStreamingContent] = useState('');
   const listRef = useRef(null);
+
+  const { loading, streamingContent, streamingThinking, sendMessage } =
+    useChatStream({ setMessages });
 
   useEffect(() => {
     if (listRef.current) {
       listRef.current.scrollTop = listRef.current.scrollHeight;
     }
-  }, [messages, streamingContent]);
+  }, [messages, streamingContent, streamingThinking]);
 
   const handleSend = async () => {
     const text = input.trim();
     if (!text || loading) return;
-
-    const userMessage = { id: `u-${Date.now()}`, role: 'user', content: text };
-    setMessages((prev) => [...prev, userMessage]);
     setInput('');
-    setLoading(true);
-    setStreamingContent('');
-
-    try {
-      const res = await fetch('/api/chat', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          messages: [...messages, userMessage].map((m) => ({ role: m.role, content: m.content })),
-        }),
-      });
-
-      if (!res.ok) {
-        const err = await res.json().catch(() => ({}));
-        throw new Error(err.error || res.statusText);
-      }
-
-      const reader = res.body?.getReader();
-      const decoder = new TextDecoder();
-      if (!reader) {
-        throw new Error('无响应体');
-      }
-
-      let buffer = '';
-      let fullContent = '';
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        buffer += decoder.decode(value, { stream: true });
-        const lines = buffer.split('\n');
-        buffer = lines.pop() ?? '';
-        for (const line of lines) {
-          const trimmed = line.trim();
-          if (!trimmed) continue;
-          try {
-            const data = JSON.parse(trimmed);
-            if (typeof data.content === 'string') {
-              fullContent += data.content;
-              setStreamingContent(fullContent);
-            }
-            if (data.done === true) break;
-          } catch (_) {
-            // 忽略非 JSON 行
-          }
-        }
-      }
-
-      setStreamingContent('');
-      setMessages((prev) => [
-        ...prev,
-        { id: `a-${Date.now()}`, role: 'assistant', content: fullContent },
-      ]);
-    } catch (err) {
-      console.error(err);
-      setStreamingContent('');
-      setMessages((prev) => [
-        ...prev,
-        {
-          id: `e-${Date.now()}`,
-          role: 'assistant',
-          content: err?.message || '回复失败，请检查网络或稍后重试。',
-        },
-      ]);
-    } finally {
-      setLoading(false);
-    }
+    await sendMessage(messages, text);
   };
 
   return (
@@ -166,10 +102,20 @@ const AiChatAssistant = () => {
                     }
                   >
                     <div className="whitespace-pre-wrap break-words">{m.content}</div>
+                    {m.role === 'assistant' && m.id !== 'welcome' && (
+                      <div className="mt-2 flex justify-end border-t border-[#e2e8f0] pt-2">
+                        <ChatPdfButton
+                          mode="single"
+                          messages={messages}
+                          singleMessage={m}
+                          type="link"
+                        />
+                      </div>
+                    )}
                   </div>
                 </div>
               ))}
-              {(loading || streamingContent) && (
+              {(loading || streamingContent || streamingThinking) && (
                 <div className="flex gap-3">
                   <Avatar
                     size={36}
@@ -187,6 +133,9 @@ const AiChatAssistant = () => {
           </div>
 
           <div className="shrink-0 border-t border-[#e2e8f0] p-3">
+            <div className="mb-2 flex justify-end">
+              <ChatPdfButton mode="full" messages={messages} size="small" />
+            </div>
             <div className="flex gap-2">
               <TextArea
                 value={input}

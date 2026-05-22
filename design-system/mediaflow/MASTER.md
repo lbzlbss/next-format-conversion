@@ -7,7 +7,7 @@
 ---
 
 **Project:** MediaFlow
-**Generated:** 2026-05-19 17:29:35
+**Generated:** 2026-05-22 16:46:25
 **Category:** Developer Tool / IDE
 
 ---
@@ -20,11 +20,11 @@
 |------|-----|--------------|
 | Primary | `#1E293B` | `--color-primary` |
 | Secondary | `#334155` | `--color-secondary` |
-| CTA/Accent | `#2563EB` | `--color-cta` |
+| CTA/Accent | `#22C55E` | `--color-cta` |
 | Background | `#0F172A` | `--color-background` |
 | Text | `#F8FAFC` | `--color-text` |
 
-**Color Notes:** Studio Blue — 深色侧栏 + 品牌蓝强调
+**Color Notes:** Code dark + run green
 
 ### Typography
 
@@ -163,11 +163,10 @@
 
 ### Page Pattern
 
-**Pattern Name:** Video-First Hero
+**Pattern Name:** Feature-Rich Showcase
 
-- **Conversion Strategy:** 86% higher engagement with video. Add captions for accessibility. Compress video for performance.
-- **CTA Placement:** Overlay on video (center/bottom) + Bottom section
-- **Section Order:** 1. Hero with video background, 2. Key features overlay, 3. Benefits section, 4. CTA
+- **CTA Placement:** Above fold
+- **Section Order:** Hero > Features > CTA
 
 ---
 

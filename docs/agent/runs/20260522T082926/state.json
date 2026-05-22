@@ -1,0 +1,32 @@
+{
+  "runId": "20260522T082926",
+  "slug": "示例-在-wiki-页面增加目录锚点导航",
+  "requirement": "-- 示例：在 Wiki 页面增加目录锚点导航",
+  "figmaUrl": null,
+  "createdAt": "2026-05-22T08:29:26.168Z",
+  "updatedAt": "2026-05-22T08:29:52.572Z",
+  "phase": "analyze",
+  "phases": {
+    "intake": {
+      "status": "completed"
+    },
+    "analyze": {
+      "status": "completed",
+      "designSpec": "02-design-spec.md",
+      "analysis": "02-requirement-analysis.md",
+      "searchOk": true
+    },
+    "implement": {
+      "status": "pending"
+    },
+    "git": {
+      "status": "pending"
+    },
+    "deploy": {
+      "status": "pending"
+    }
+  },
+  "branch": "feat/20260522T082926-示例-在-wiki-页面增加目录锚点导航",
+  "tag": null,
+  "vercelDeploymentUrl": null
+}

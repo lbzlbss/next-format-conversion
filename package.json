@@ -7,9 +7,17 @@
     "dev": "node scripts/ensure-wiki-index.mjs && next dev --webpack -H 0.0.0.0",
     "dev:turbo": "node scripts/ensure-wiki-index.mjs && next dev -H 0.0.0.0",
     "wiki:build": "node scripts/build-wiki-index.mjs",
-    "build": "pnpm wiki:build && next build",
+    "build": "node scripts/ensure-chat-pdf-font.mjs && pnpm wiki:build && next build",
+    "chat-pdf:font": "node scripts/ensure-chat-pdf-font.mjs",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "agent:run": "node scripts/agent/pipeline.mjs",
+    "agent:intake": "node scripts/agent/intake.mjs",
+    "agent:design": "node scripts/agent/design-system.mjs",
+    "agent:test": "node scripts/agent/test-report.mjs",
+    "agent:git": "node scripts/agent/git-flow.mjs",
+    "agent:perf": "node scripts/agent/perf-report.mjs",
+    "agent:archive": "node scripts/agent/archive.mjs"
   },
   "dependencies": {
     "@ant-design/icons": "^6.1.0",
@@ -22,6 +30,7 @@
     "form-data": "^4.0.5",
     "jszip": "^3.10.1",
     "next": "16.1.1",
+    "pdfkit": "^0.18.0",
     "protobufjs": "^8.0.0",
     "react": "19.2.3",
     "react-dom": "19.2.3",
