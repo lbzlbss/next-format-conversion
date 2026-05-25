@@ -4,6 +4,7 @@ import path from 'path';
 import yauzl from 'yauzl';
 
 import { ApiError } from '../api/_lib/guard.js';
+import { detectArchiveKind, findZipMagicOffset, invalidZipUserMessage } from './zip-sniff.js';
 
 const SUPPORTED_IMAGE_EXTS = new Set(['.png', '.jpg', '.jpeg', '.webp']);
 
@@ -52,35 +53,16 @@ export function validateZipBuffer(buf, expectedBytes = null) {
     );
   }
 
-  let scanBuf = buf;
-  if (!(buf[0] === 0x50 && buf[1] === 0x4b)) {
-    const scanLen = Math.min(buf.length, 65536);
-    let offset = -1;
-    for (let i = 0; i < scanLen - 3; i++) {
-      if (buf[i] !== 0x50 || buf[i + 1] !== 0x4b) continue;
-      const b2 = buf[i + 2];
-      if (b2 === 0x03 || b2 === 0x05 || b2 === 0x07) {
-        offset = i;
-        break;
-      }
-    }
-    if (offset > 0) {
-      scanBuf = buf.subarray(offset);
-    } else {
-      const head = buf.slice(0, 120).toString('utf8');
-      if (head.trimStart().startsWith('<') || head.includes('<!DOCTYPE')) {
-        throw new ApiError(
-          'BLOB_FETCH_FAILED',
-          '下载内容不是 ZIP（疑似错误页面），请重新上传',
-          502,
-        );
-      }
-      throw new ApiError('INVALID_FORMAT', '不是有效的 ZIP 文件（缺少 PK 文件头）', 400, {
-        sniff: buf.subarray(0, 8).toString('hex'),
-      });
-    }
+  const pkOffset = findZipMagicOffset(buf);
+  if (pkOffset < 0) {
+    const kind = detectArchiveKind(buf);
+    const msg = invalidZipUserMessage(kind);
+    const code = kind === 'HTML' || kind === 'JSON' ? 'BLOB_FETCH_FAILED' : 'INVALID_FORMAT';
+    throw new ApiError(code, msg, code === 'BLOB_FETCH_FAILED' ? 502 : 400, {
+      sniff: buf.subarray(0, 8).toString('hex'),
+    });
   }
-  const tailSource = scanBuf;
+  const tailSource = pkOffset > 0 ? buf.subarray(pkOffset) : buf;
 
   const tailLen = Math.min(tailSource.length, 65557);
   const tail = tailSource.slice(tailSource.length - tailLen);
@@ -103,9 +85,10 @@ export function validateZipBuffer(buf, expectedBytes = null) {
   }
 }
 
-function openZip(zipPath) {
+/** 内存打开 ZIP，避免大文件再写入 /tmp（Vercel /tmp 约 512MB） */
+function openZipFromBuffer(buffer) {
   return new Promise((resolve, reject) => {
-    yauzl.open(zipPath, { lazyEntries: true, autoClose: true }, (err, zipfile) => {
+    yauzl.fromBuffer(buffer, { lazyEntries: true }, (err, zipfile) => {
       if (err) reject(err);
       else resolve(zipfile);
     });
@@ -157,28 +140,20 @@ function listImageEntries(zipfile) {
 /**
  * 使用 yauzl 解压序列帧（支持 ZIP64 / 大文件，避免 JSZip 中央目录错误）
  * @param {Buffer} zipBuffer
- * @param {string} workDir 可写临时目录
- * @returns {Promise<Array<{ name: string, readBuffer: () => Promise<Buffer> }>>}
+ * @param {string} [_workDir] 保留参数以兼容调用方；不再将整包写入磁盘
+ * @returns {Promise<{ frames: Array<{ name: string, readBuffer: () => Promise<Buffer> }>, dispose: () => Promise<void> }>}
  */
-export async function extractZipImageFrames(zipBuffer, workDir) {
+export async function extractZipImageFrames(zipBuffer, _workDir) {
   validateZipBuffer(zipBuffer);
   let sourceBuf = zipBuffer;
-  if (!(zipBuffer[0] === 0x50 && zipBuffer[1] === 0x4b)) {
-    const scanLen = Math.min(zipBuffer.length, 65536);
-    for (let i = 0; i < scanLen - 3; i++) {
-      if (zipBuffer[i] === 0x50 && zipBuffer[i + 1] === 0x4b) {
-        sourceBuf = zipBuffer.subarray(i);
-        break;
-      }
-    }
+  const pkOffset = findZipMagicOffset(zipBuffer);
+  if (pkOffset > 0) {
+    sourceBuf = zipBuffer.subarray(pkOffset);
   }
-
-  const zipPath = path.join(workDir, '_source.zip');
-  await fsp.writeFile(zipPath, sourceBuf);
 
   let zipfile;
   try {
-    zipfile = await openZip(zipPath);
+    zipfile = await openZipFromBuffer(sourceBuf);
     const entries = await listImageEntries(zipfile);
     if (entries.length === 0) {
       throw new ApiError('INVALID_FORMAT', '压缩包中未找到可用图片（png/jpg/jpeg/webp）', 400);

@@ -31,11 +31,16 @@ export function toErrorResponse(error) {
   if (error instanceof ApiError) {
     return jsonError(error.code, error.message, error.status, error.detail);
   }
-  return jsonError(
-    'SERVER_ERROR',
-    error?.message || 'Internal server error',
-    500
-  );
+  const raw = String(error?.message || error || '');
+  if (/enospc|no space left on device/i.test(raw)) {
+    return jsonError(
+      'DISK_FULL',
+      '服务端临时磁盘已满（平台 /tmp 约 512MB）。请减少序列帧数量、降低分辨率，或拆成多个较小的 ZIP 分批转换。',
+      507,
+      { hint: 'vercel_tmp_limit_mb: 512' },
+    );
+  }
+  return jsonError('SERVER_ERROR', raw || 'Internal server error', 500);
 }
 
 export function assertFile(file, { maxBytes, label = '文件' } = {}) {

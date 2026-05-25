@@ -1,4 +1,5 @@
 import { ApiError } from '../api/_lib/guard.js';
+import { detectArchiveKind, findZipMagicOffset, invalidZipUserMessage } from './zip-sniff.js';
 import { validateZipBuffer } from './zip-extract.server.js';
 
 const VERCEL_BLOB_HOST_RE = /(?:^|\.)((?:public\.)?blob\.vercel-storage\.com|vercel-storage\.com)$/i;
@@ -15,18 +16,7 @@ export function normalizeVercelBlobDownloadUrl(blobUrl) {
   return u.toString();
 }
 
-function detectNonZipKind(buf) {
-  if (!buf || buf.length < 4) return null;
-  if (buf[0] === 0x52 && buf[1] === 0x61 && buf[2] === 0x72 && buf[3] === 0x21) return 'RAR';
-  if (buf[0] === 0x37 && buf[1] === 0x7a && buf[2] === 0xbc && buf[3] === 0xaf) return '7Z';
-  if (buf[0] === 0x1f && buf[1] === 0x8b) return 'GZIP';
-  const text = buf.slice(0, 80).toString('utf8');
-  if (text.trimStart().startsWith('{') || text.trimStart().startsWith('[')) return 'JSON';
-  if (text.trimStart().startsWith('<')) return 'HTML';
-  return null;
-}
-
-async function readFirstBytes(url, n = 4) {
+async function readFirstBytes(url, n = 16) {
   const res = await fetch(url, {
     method: 'GET',
     headers: { Range: `bytes=0-${n - 1}` },
@@ -53,31 +43,14 @@ async function readFirstBytes(url, n = 4) {
 export async function assertRemoteZipProbe(blobUrl) {
   const downloadUrl = normalizeVercelBlobDownloadUrl(blobUrl);
   const head = await readFirstBytes(downloadUrl, 16);
-  const isPk = head[0] === 0x50 && head[1] === 0x4b;
-  if (isPk) return downloadUrl;
+  if (findZipMagicOffset(head) >= 0) return downloadUrl;
 
-  const kind = detectNonZipKind(head);
-  if (kind === 'HTML' || kind === 'JSON') {
-    throw new ApiError(
-      'BLOB_FETCH_FAILED',
-      'Blob 链接返回的是网页/JSON 而非 ZIP 文件。请重新上传，或等待部署更新后重试。',
-      502,
-      { sniff: head.toString('hex').slice(0, 32) },
-    );
-  }
-  if (kind) {
-    throw new ApiError(
-      'INVALID_FORMAT',
-      `文件格式为 ${kind}，请上传标准 .zip 压缩包（非分卷、非 RAR/7z）`,
-      400,
-    );
-  }
-  throw new ApiError(
-    'INVALID_FORMAT',
-    '不是有效的 ZIP 文件（缺少 PK 文件头）。请确认上传完成且文件未损坏。',
-    400,
-    { sniff: head.toString('hex').slice(0, 32) },
-  );
+  const kind = detectArchiveKind(head);
+  const message = invalidZipUserMessage(kind);
+  const code = kind === 'HTML' || kind === 'JSON' ? 'BLOB_FETCH_FAILED' : 'INVALID_FORMAT';
+  throw new ApiError(code, message, code === 'BLOB_FETCH_FAILED' ? 502 : 400, {
+    sniff: Buffer.from(head).toString('hex').slice(0, 32),
+  });
 }
 
 /**

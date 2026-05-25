@@ -127,21 +127,22 @@ function runFfmpegImageSeqToMp4({ pattern, fps, filterComplex, outMp4, crf = 18 
   });
 }
 
-async function buildSvgaFromPngBuffers(pngBuffers, { fps, width, height }) {
+async function buildSvgaFromFrameDir(framesDir, frameCount, { fps, width, height }) {
   const zip = new JSZip();
   const images = {};
 
-  for (let i = 0; i < pngBuffers.length; i++) {
+  for (let i = 0; i < frameCount; i++) {
     const key = `image_${i}`;
-    zip.file(`images/${key}.png`, pngBuffers[i]);
+    const pngPath = path.join(framesDir, `${String(i).padStart(3, '0')}.png`);
+    const buf = await fsp.readFile(pngPath);
+    zip.file(`images/${key}.png`, buf);
     images[key] = `images/${key}`; // no .png suffix
   }
 
   const IDENTITY = { a: 1, b: 0, c: 0, d: 1, tx: 0, ty: 0 };
   const FULL_LAYOUT = { x: 0, y: 0, width, height };
-  const frameCount = pngBuffers.length;
 
-  const sprites = pngBuffers.map((_, i) => ({
+  const sprites = Array.from({ length: frameCount }, (_, i) => ({
     imageKey: `image_${i}`,
     frames: Array.from({ length: frameCount }, (__, f) => ({
       alpha: f === i ? 1 : 0,
@@ -307,7 +308,6 @@ export async function POST(request) {
           const padW = ceilTo(encW, 16);
           const padH = ceilTo(encH, 16);
 
-          const resizedPngs = [];
           const resizeOpt = fitToSharp(fit);
 
           for (let i = 0; i < frames.length; i++) {
@@ -328,18 +328,17 @@ export async function POST(request) {
               });
             const pngBuf = await base.png().toBuffer();
 
-            // Write to disk for ffmpeg (vap path) and keep buffer for svga path
             const outPngPath = path.join(framesDir, `${String(i).padStart(3, '0')}.png`);
             await fsp.writeFile(outPngPath, pngBuf);
-            resizedPngs.push(pngBuf);
           }
 
           const outStem = String(inputName || 'asset').replace(/\.zip$/i, '');
           if (outFormat === 'svga') {
-            // SVGA 产物按显示尺寸输出（不带 padding），避免资源带透明边造成误会。
-            // 这里仍使用 pad 后的 pngBuffers，但 spec 的 viewBox 用 encW/encH，
-            // 播放时会按 layout 裁切；同时也更贴近“原始尺寸为准”的语义。
-            const svgaBuf = await buildSvgaFromPngBuffers(resizedPngs, { fps, width: encW, height: encH });
+            const svgaBuf = await buildSvgaFromFrameDir(framesDir, frames.length, {
+              fps,
+              width: encW,
+              height: encH,
+            });
             return new NextResponse(svgaBuf, {
               headers: {
                 'Content-Type': 'application/octet-stream',

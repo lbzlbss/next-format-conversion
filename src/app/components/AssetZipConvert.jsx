@@ -250,18 +250,33 @@ export default function AssetZipConvert() {
 
         <Upload.Dragger
           multiple={false}
-          accept='.zip'
+          accept='.zip,application/zip,application/x-zip-compressed'
           fileList={fileList}
           beforeUpload={() => false}
-          onChange={(info) => setFileList(info.fileList.slice(-1))}
+          onChange={async (info) => {
+            const latest = info.fileList.slice(-1);
+            const raw = latest[0]?.originFileObj;
+            if (!raw) {
+              setFileList([]);
+              return;
+            }
+            try {
+              await assertLocalZipFile(raw);
+              setFileList(latest);
+            } catch (e) {
+              setFileList([]);
+              message.error(e?.message || '不是有效的 ZIP 文件');
+            }
+          }}
         >
           <p className='ant-upload-drag-icon'>
             <InboxOutlined />
           </p>
           <p className='ant-upload-text'>拖拽或点击上传 ZIP（内含序列帧图片）</p>
           <p className='ant-upload-hint'>
-            支持 png / jpg / jpeg / webp，按文件名自然排序。单文件最大 {formatBytes(ASSET_ZIP_MAX_BYTES)}
-            ，超过 {formatBytes(BLOB_MULTIPART_THRESHOLD_BYTES)} 自动分片直传 Blob。
+            请上传<strong>标准 ZIP</strong>（对「序列帧文件夹」右键压缩，勿用 RAR/7z/分卷）。
+            内含 png/jpg/webp，按文件名排序，建议 ≤500 帧。大 ZIP 转换占用云端临时盘（约 512MB），帧数过多可能失败。
+            最大 {formatBytes(ASSET_ZIP_MAX_BYTES)}，超过 {formatBytes(BLOB_MULTIPART_THRESHOLD_BYTES)} 自动分片上传。
           </p>
         </Upload.Dragger>
 
