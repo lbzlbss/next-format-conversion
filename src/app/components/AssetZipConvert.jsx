@@ -172,6 +172,7 @@ export default function AssetZipConvert() {
       const payload = {
         blobUrl: uploaded.url,
         filename: f.name,
+        expectedBytes: f.size,
         format,
         fit,
         fps: Number(fps ?? 30),

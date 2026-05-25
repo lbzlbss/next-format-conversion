@@ -32,6 +32,7 @@ const nextConfig: NextConfig = {
     "jszip",
     "pdf-lib",
     "@pdf-lib/fontkit",
+    "yauzl",
   ],
   experimental: {
     serverActions: {

@@ -9,7 +9,9 @@ import ffmpeg from 'fluent-ffmpeg';
 import JSZip from 'jszip';
 import sharp from 'sharp';
 
-import { ApiError, LIMITS, assertFile, toErrorResponse, withTimeout } from '../_lib/guard';
+import { ApiError, LIMITS, assertFile, assertMaxFrames, toErrorResponse, withTimeout } from '../_lib/guard';
+import { validateZipBuffer } from '../../lib/zip-extract.server.js';
+import { extractZipImageFrames } from '../../lib/zip-extract.server.js';
 import { buildVapcFromSequence } from '../../lib/vapc-builder.js';
 import { rebuildWithVapc } from '../../lib/vap-mp4.server.js';
 
@@ -33,34 +35,6 @@ if (!ffmpegBin) {
   }
 }
 if (ffmpegBin) ffmpeg.setFfmpegPath(ffmpegBin);
-
-const SUPPORTED_IMAGE_EXTS = new Set(['.png', '.jpg', '.jpeg', '.webp']);
-
-function naturalKey(s) {
-  const parts = String(s).split(/(\d+)/g);
-  return parts.map((p) => (p && /^\d+$/.test(p) ? Number(p) : String(p).toLowerCase()));
-}
-
-function cmpNatural(a, b) {
-  const ak = naturalKey(a);
-  const bk = naturalKey(b);
-  const n = Math.max(ak.length, bk.length);
-  for (let i = 0; i < n; i++) {
-    const av = ak[i];
-    const bv = bk[i];
-    if (av == null && bv == null) return 0;
-    if (av == null) return -1;
-    if (bv == null) return 1;
-    if (typeof av === 'number' && typeof bv === 'number') {
-      if (av !== bv) return av - bv;
-      continue;
-    }
-    const as = String(av);
-    const bs = String(bv);
-    if (as !== bs) return as < bs ? -1 : 1;
-  }
-  return 0;
-}
 
 function parsePositiveInt(v) {
   if (v == null || v === '') return null;
@@ -188,19 +162,6 @@ async function buildSvgaFromPngBuffers(pngBuffers, { fps, width, height }) {
   return zip.generateAsync({ type: 'nodebuffer', compression: 'DEFLATE' });
 }
 
-async function zipToFrames(zipBuffer) {
-  const zip = await JSZip.loadAsync(zipBuffer);
-  const entries = [];
-  for (const [name, f] of Object.entries(zip.files)) {
-    if (f.dir) continue;
-    const ext = path.extname(name).toLowerCase();
-    if (!SUPPORTED_IMAGE_EXTS.has(ext)) continue;
-    entries.push({ name, file: f });
-  }
-  entries.sort((a, b) => cmpNatural(path.basename(a.name), path.basename(b.name)));
-  return entries;
-}
-
 function parseInputPayload(contentType, formData, jsonBody) {
   if (contentType.includes('application/json')) {
     return {
@@ -214,6 +175,7 @@ function parseInputPayload(contentType, formData, jsonBody) {
       reqW: parsePositiveInt(jsonBody?.width),
       reqH: parsePositiveInt(jsonBody?.height),
       stem: String(jsonBody?.filename || 'asset').replace(/\.(zip|svga|vap)$/i, ''),
+      expectedBytes: parsePositiveInt(jsonBody?.expectedBytes) ?? parsePositiveInt(jsonBody?.fileSize),
     };
   }
 
@@ -228,6 +190,7 @@ function parseInputPayload(contentType, formData, jsonBody) {
     reqW: parsePositiveInt(formData?.get('width')),
     reqH: parsePositiveInt(formData?.get('height')),
     stem: String(formData?.get('filename') || 'asset').replace(/\.(zip|svga|vap)$/i, ''),
+    expectedBytes: parsePositiveInt(formData?.get('expectedBytes')) ?? parsePositiveInt(formData?.get('fileSize')),
   };
 }
 
@@ -257,7 +220,8 @@ export async function POST(request) {
         const jsonBody = isJson ? await request.json() : null;
         const formData = isJson ? null : await request.formData();
 
-        const { file, blobUrl, outFormat, fps, fit, pack, crf, reqW, reqH, stem } = parseInputPayload(
+        const { file, blobUrl, outFormat, fps, fit, pack, crf, reqW, reqH, stem, expectedBytes } =
+          parseInputPayload(
           contentType,
           formData,
           jsonBody
@@ -328,6 +292,7 @@ export async function POST(request) {
               { maxBytes: LIMITS.SVGA_VAP_MAX_BYTES, actualBytes: zipBuffer.length }
             );
           }
+          validateZipBuffer(zipBuffer, expectedBytes || remoteBytes || null);
           inputName = path.basename(parsedUrl.pathname) || inputName;
         } else {
           assertFile(file, { maxBytes: LIMITS.SVGA_VAP_MAX_BYTES, label: '压缩包' });
@@ -335,6 +300,7 @@ export async function POST(request) {
             throw new ApiError('INVALID_FORMAT', '请上传 .zip 压缩包', 400);
           }
           zipBuffer = Buffer.from(await file.arrayBuffer());
+          validateZipBuffer(zipBuffer, expectedBytes || file.size || null);
           inputName = String(file.name || inputName);
         }
 
@@ -353,38 +319,36 @@ export async function POST(request) {
         if (!['right', 'bottom'].includes(pack)) {
           throw new ApiError('INVALID_FORMAT', 'pack 仅支持 right | bottom', 400);
         }
-        const frames = await zipToFrames(zipBuffer);
-        if (frames.length === 0) {
-          throw new ApiError('INVALID_FORMAT', '压缩包中未找到可用图片（png/jpg/jpeg/webp）', 400);
-        }
-
-        const firstBuf = await frames[0].file.async('nodebuffer');
-        const meta = await sharp(firstBuf, { failOn: 'none' }).metadata();
-        const origW = meta.width ?? null;
-        const origH = meta.height ?? null;
-        if (!origW || !origH) {
-          throw new ApiError('INVALID_FORMAT', '无法读取首帧图片尺寸', 400);
-        }
-
-        const targetW = reqW ?? origW;
-        const targetH = reqH ?? origH;
-        // H.264 yuv420p prefers even dimensions; odd sizes can cause artifacts or failures.
-        const encW = toEven(targetW);
-        const encH = toEven(targetH);
-        // Further pad to macroblock-friendly sizes to avoid decoder artifacts (16x16).
-        const padW = ceilTo(encW, 16);
-        const padH = ceilTo(encH, 16);
-
         const tmpDir = await fsp.mkdtemp(path.join(os.tmpdir(), `asset_zip_${randomUUID()}_`));
         const framesDir = path.join(tmpDir, 'frames');
         await fsp.mkdir(framesDir, { recursive: true });
 
+        let zipSession = null;
         try {
+          zipSession = await extractZipImageFrames(zipBuffer, tmpDir);
+          const frames = zipSession.frames;
+          assertMaxFrames(frames.length);
+
+          const firstBuf = await frames[0].readBuffer();
+          const meta = await sharp(firstBuf, { failOn: 'none' }).metadata();
+          const origW = meta.width ?? null;
+          const origH = meta.height ?? null;
+          if (!origW || !origH) {
+            throw new ApiError('INVALID_FORMAT', '无法读取首帧图片尺寸', 400);
+          }
+
+          const targetW = reqW ?? origW;
+          const targetH = reqH ?? origH;
+          const encW = toEven(targetW);
+          const encH = toEven(targetH);
+          const padW = ceilTo(encW, 16);
+          const padH = ceilTo(encH, 16);
+
           const resizedPngs = [];
           const resizeOpt = fitToSharp(fit);
 
           for (let i = 0; i < frames.length; i++) {
-            const buf = await frames[i].file.async('nodebuffer');
+            const buf = await frames[i].readBuffer();
             const base = sharp(buf, { failOn: 'none' })
               .ensureAlpha()
               .resize(encW, encH, {
@@ -456,13 +420,17 @@ export async function POST(request) {
             },
           });
         } finally {
-          // best-effort cleanup
+          try {
+            await zipSession?.dispose?.();
+          } catch {
+            /* ignore */
+          }
           try {
             await fsp.rm(tmpDir, { recursive: true, force: true });
           } catch (_) {}
         }
       })(),
-      280000
+      540000
     );
   } catch (e) {
     return toErrorResponse(e);
