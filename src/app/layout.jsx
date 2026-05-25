@@ -1,5 +1,6 @@
 import { ConfigProvider } from 'antd';
 import './globals.css';
+import { firaCode, firaSans } from './fonts';
 
 export const metadata = {
   title: 'MediaFlow — 多媒体格式转换',
@@ -8,15 +9,15 @@ export const metadata = {
 
 export default function RootLayout({ children }) {
   return (
-    <html lang="zh-CN">
-      <body className="min-h-screen antialiased">
+    <html lang="zh-CN" className={`${firaSans.variable} ${firaCode.variable}`}>
+      <body className={`${firaSans.className} min-h-screen antialiased`}>
         <ConfigProvider
           theme={{
             token: {
               colorPrimary: '#2563EB',
               colorInfo: '#1E293B',
               borderRadius: 8,
-              fontFamily: "'Fira Sans', system-ui, sans-serif",
+              fontFamily: 'var(--font-fira-sans), system-ui, sans-serif',
               fontSize: 14,
             },
             components: {

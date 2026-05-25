@@ -1,0 +1,49 @@
+{
+  "runId": "20260525T063045",
+  "slug": "首页性能优化-提升-lighthouse-performance-lcp-cls-减少首屏-js",
+  "requirement": "首页性能优化：提升 Lighthouse Performance、LCP、CLS，减少首屏 JS/CSS 与阻塞资源",
+  "figmaUrl": null,
+  "createdAt": "2026-05-25T06:30:45.477Z",
+  "updatedAt": "2026-05-25T06:37:03.663Z",
+  "phase": "implement",
+  "phases": {
+    "intake": {
+      "status": "completed"
+    },
+    "analyze": {
+      "status": "completed",
+      "designSpec": "02-design-spec.md",
+      "analysis": "02-requirement-analysis.md",
+      "searchOk": true
+    },
+    "implement": {
+      "status": "completed",
+      "verifyOk": true,
+      "testReport": "03-test-report.md",
+      "verifyReport": "04-verify-report.md"
+    },
+    "git": {
+      "status": "pending"
+    },
+    "deploy": {
+      "status": "completed",
+      "perfReport": "05-perf-report.md",
+      "perfReportHtml": null,
+      "deploymentUrl": "https://nextformat.aiblank.top/"
+    },
+    "verify": {
+      "status": "completed",
+      "attempt": 1,
+      "report": "04-verify-report.md",
+      "prodUrl": "https://nextformat.aiblank.top/",
+      "summary": {
+        "total": 5,
+        "passed": 5,
+        "failed": 0
+      }
+    }
+  },
+  "branch": "feat/20260525T063045-首页性能优化-提升-lighthouse-performance-lcp-cls-减少首屏-js",
+  "tag": null,
+  "vercelDeploymentUrl": "https://nextformat.aiblank.top/"
+}

@@ -59,6 +59,9 @@ importers:
       svgaplayerweb:
         specifier: ^2.3.2
         version: 2.3.2
+      video-animation-player:
+        specifier: ^1.0.5
+        version: 1.0.5
       xlsx:
         specifier: ^0.18.5
         version: 0.18.5
@@ -2560,6 +2563,9 @@ packages:
 
   util-deprecate@1.0.2:
     resolution: {integrity: sha512-EPD5q1uXyFxJpCrLnCc1nHnq3gOa6DZBocAIiI2TaSCA7VCJ1UJDMagCzIkXNsUYfD1daK//LTEQ8xiIbrHtcw==, tarball: https://registry.npmmirror.com/util-deprecate/-/util-deprecate-1.0.2.tgz}
+
+  video-animation-player@1.0.5:
+    resolution: {integrity: sha512-KLz+uL6zojOYXEPFxL2AB0iKSLHnmKQPBnXmFWHpGtAdB6/j9EWCbWcUDCg0KVOBTFRHa2UfiSNK0y1I+LEfpA==, tarball: https://registry.npmmirror.com/video-animation-player/-/video-animation-player-1.0.5.tgz}
 
   which-boxed-primitive@1.1.1:
     resolution: {integrity: sha512-TbX3mj8n0odCBFVlY8AxkqcHASw3L60jIuF8jFP78az3C2YhmGvqbHBpAjTRH2/xqYunrJ9g1jSyjCjpoWzIAA==, tarball: https://registry.npmmirror.com/which-boxed-primitive/-/which-boxed-primitive-1.1.1.tgz}
@@ -5394,6 +5400,8 @@ snapshots:
       punycode: 2.3.1
 
   util-deprecate@1.0.2: {}
+
+  video-animation-player@1.0.5: {}
 
   which-boxed-primitive@1.1.1:
     dependencies:

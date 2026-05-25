@@ -1,5 +1,4 @@
 @import "tailwindcss";
-@import url("https://fonts.googleapis.com/css2?family=Fira+Code:wght@400;500;600;700&family=Fira+Sans:wght@300;400;500;600;700&display=swap");
 
 /* MediaFlow — Studio Blue 主题（多媒体工具台） */
 :root {
@@ -44,8 +43,8 @@
   --color-mf-accent-soft: var(--mf-accent-soft);
   --color-mf-accent-soft-fg: var(--mf-accent-soft-fg);
   --color-mf-danger: var(--mf-danger);
-  --font-sans: "Fira Sans", ui-sans-serif, system-ui, sans-serif;
-  --font-mono: "Fira Code", ui-monospace, monospace;
+  --font-sans: var(--font-fira-sans), ui-sans-serif, system-ui, sans-serif;
+  --font-mono: var(--font-fira-code), ui-monospace, monospace;
 }
 
 body {

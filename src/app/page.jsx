@@ -16,19 +16,12 @@ import {
   QuestionCircleOutlined,
   ThunderboltOutlined,
 } from '@ant-design/icons';
-import GifToWebp from './components/GifToWebp';
-import Mp4Compress from './components/Mp4Compress';
-import GifToMp4 from './components/GifToMp4';
-import Mp4FirstFrame from './components/Mp4FirstFrame';
-import ImageCompress from './components/ImageCompress';
-import GifCompress from './components/GifCompress';
-import ImageGenerate from './components/ImageGenerate';
-import SvgaTool from './components/SvgaTool';
-import { SvgaToolProvider, SvgaToolMain, SvgaToolEditPanel } from './components/SvgaToolInternal';
-import { VapProvider, VapMain, VapEditPanel } from './components/VapToolInternal';
-import VideoWatermarkRemover from './components/VideoWatermarkRemover';
-import AssetZipConvert from './components/AssetZipConvert';
 import SidebarNav from './components/layout/SidebarNav';
+import {
+  SIMPLE_TOOL_COMPONENTS,
+  LazySvgaWorkspace,
+  LazyVapWorkspace,
+} from './components/home/lazy-tools';
 
 /** 侧栏分组 */
 const NAV_GROUPS = [
@@ -116,17 +109,17 @@ const HomePage = () => {
 
   const navItems = useMemo(
     () => [
-      { key: 'gifToWebp', label: 'GIF 转 WebP', icon: <SwapOutlined />, Component: GifToWebp },
-      { key: 'mp4Compress', label: 'MP4 压缩', icon: <CompressOutlined />, Component: Mp4Compress },
-      { key: 'gifToMp4', label: 'GIF 转 MP4', icon: <VideoCameraOutlined />, Component: GifToMp4 },
-      { key: 'mp4FirstFrame', label: 'MP4 获取首帧', icon: <PictureOutlined />, Component: Mp4FirstFrame },
-      { key: 'imageCompress', label: '图片压缩', icon: <FileImageOutlined />, Component: ImageCompress },
-      { key: 'gifCompress', label: 'GIF 压缩', icon: <CompressOutlined />, Component: GifCompress },
-      { key: 'imageGenerate', label: 'AI 图像生成', icon: <EditOutlined />, Component: ImageGenerate },
-      { key: 'svgaTool', label: 'SVGA 工具', icon: <PlayCircleOutlined />, Component: SvgaTool },
-      { key: 'vapTool',  label: 'VAP 动效',  icon: <ThunderboltOutlined />, Component: null },
-      { key: 'assetZipConvert', label: '压缩包动效转换', icon: <SettingOutlined />, Component: AssetZipConvert },
-      { key: 'videoWatermark', label: '视频去水印', icon: <EditOutlined />, Component: VideoWatermarkRemover },
+      { key: 'gifToWebp', label: 'GIF 转 WebP', icon: <SwapOutlined /> },
+      { key: 'mp4Compress', label: 'MP4 压缩', icon: <CompressOutlined /> },
+      { key: 'gifToMp4', label: 'GIF 转 MP4', icon: <VideoCameraOutlined /> },
+      { key: 'mp4FirstFrame', label: 'MP4 获取首帧', icon: <PictureOutlined /> },
+      { key: 'imageCompress', label: '图片压缩', icon: <FileImageOutlined /> },
+      { key: 'gifCompress', label: 'GIF 压缩', icon: <CompressOutlined /> },
+      { key: 'imageGenerate', label: 'AI 图像生成', icon: <EditOutlined /> },
+      { key: 'svgaTool', label: 'SVGA 工具', icon: <PlayCircleOutlined /> },
+      { key: 'vapTool', label: 'VAP 动效', icon: <ThunderboltOutlined /> },
+      { key: 'assetZipConvert', label: '压缩包动效转换', icon: <SettingOutlined /> },
+      { key: 'videoWatermark', label: '视频去水印', icon: <EditOutlined /> },
     ],
     []
   );
@@ -135,6 +128,8 @@ const HomePage = () => {
     () => navItems.find((it) => it.key === activeKey) ?? navItems[0],
     [activeKey, navItems]
   );
+
+  const ActiveSimpleTool = SIMPLE_TOOL_COMPONENTS[active.key];
 
   const mobileSelectOptions = useMemo(
     () =>
@@ -426,63 +421,16 @@ const HomePage = () => {
 
           <div className="flex flex-1 flex-col gap-8 p-4 md:flex-row md:p-8">
             {active.key === 'svgaTool' ? (
-              <SvgaToolProvider>
-                <section className="min-w-0 flex-1">
-                  <div className="mf-card p-4 md:p-6">
-                    <div className="mb-4 flex items-center justify-between gap-3">
-                      <div className="min-w-0">
-                        <div className="truncate text-[16px] font-semibold text-mf-text">{active.label}</div>
-                        <p className="text-[12px] text-mf-muted">{TOOL_DESC[active.key] || '选择工具开始处理。'}</p>
-                      </div>
-                    </div>
-                    <div className="min-w-0">
-                      <SvgaToolMain />
-                    </div>
-                  </div>
-                </section>
-                <aside className="flex min-h-0 w-full shrink-0 flex-col md:w-[360px]">
-                  <div className="mf-card p-5">
-                    <div className="flex items-center justify-between">
-                      <div className="text-[14px] font-bold text-mf-text">{rightPanelSpec.title}</div>
-                      <span className="text-mf-muted">
-                        <SettingOutlined />
-                      </span>
-                    </div>
-                    <div className="mt-4 min-h-0 flex-1 space-y-4 text-[12px] text-mf-muted">
-                      <SvgaToolEditPanel />
-                    </div>
-                  </div>
-                </aside>
-              </SvgaToolProvider>
+              <LazySvgaWorkspace
+                label={active.label}
+                description={TOOL_DESC[active.key] || '选择工具开始处理。'}
+                rightPanelTitle={rightPanelSpec.title}
+              />
             ) : active.key === 'vapTool' ? (
-              <VapProvider>
-                <section className="min-w-0 flex-1">
-                  <div className="mf-card p-4 md:p-6">
-                    <div className="mb-4 flex items-center justify-between gap-3">
-                      <div className="min-w-0">
-                        <div className="truncate text-[16px] font-semibold text-mf-text">{active.label}</div>
-                        <p className="text-[12px] text-mf-muted">{TOOL_DESC[active.key]}</p>
-                      </div>
-                    </div>
-                    <div className="min-w-0">
-                      <VapMain />
-                    </div>
-                  </div>
-                </section>
-                <aside className="flex min-h-0 w-full shrink-0 flex-col md:w-[360px]">
-                  <div className="mf-card p-5">
-                    <div className="flex items-center justify-between">
-                      <div className="text-[14px] font-bold text-mf-text">VAP 配置 & 导出</div>
-                      <span className="text-mf-muted">
-                        <SettingOutlined />
-                      </span>
-                    </div>
-                    <div className="mt-4 min-h-0 flex-1 space-y-4 text-[12px] text-mf-muted">
-                      <VapEditPanel />
-                    </div>
-                  </div>
-                </aside>
-              </VapProvider>
+              <LazyVapWorkspace
+                label={active.label}
+                description={TOOL_DESC[active.key]}
+              />
             ) : (
               <>
                 <section className="min-w-0 flex-1">
@@ -494,7 +442,12 @@ const HomePage = () => {
                       </div>
                     </div>
                     <div className="min-w-0">
-                      <active.Component config={activeSettings} onConfigChange={updateActiveSettings} />
+                      {ActiveSimpleTool ? (
+                        <ActiveSimpleTool
+                          config={activeSettings}
+                          onConfigChange={updateActiveSettings}
+                        />
+                      ) : null}
                     </div>
                   </div>
                 </section>
