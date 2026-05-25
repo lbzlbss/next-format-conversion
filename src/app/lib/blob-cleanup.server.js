@@ -1,0 +1,73 @@
+import { del, list } from '@vercel/blob';
+
+/** 序列帧 ZIP 在 Blob 中的路径前缀（与 safeZipBlobPathname 一致） */
+export const ASSET_BLOB_PREFIX = 'asset-seq/';
+
+const VERCEL_BLOB_HOST_RE = /(?:^|\.)((?:public\.)?blob\.vercel-storage\.com|vercel-storage\.com)$/i;
+
+/**
+ * @param {string} url
+ */
+export function isVercelBlobUrl(url) {
+  try {
+    const u = new URL(url);
+    return VERCEL_BLOB_HOST_RE.test(u.hostname);
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * 转换结束后删除本次上传的 ZIP（失败也删，避免 Hobby 1GB 配额被占满）
+ * @param {string | null | undefined} blobUrl
+ */
+export async function deleteAssetBlobQuietly(blobUrl) {
+  if (!blobUrl || !isVercelBlobUrl(blobUrl) || !process.env.BLOB_READ_WRITE_TOKEN) {
+    return false;
+  }
+  try {
+    await del(blobUrl);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * 清理 asset-seq/ 下过期或未完成的临时 ZIP
+ * @param {{ prefix?: string, maxAgeMs?: number }} options maxAgeMs=0 表示删除该前缀下全部对象
+ */
+export async function purgeAssetBlobs({ prefix = ASSET_BLOB_PREFIX, maxAgeMs = 24 * 60 * 60 * 1000 } = {}) {
+  if (!process.env.BLOB_READ_WRITE_TOKEN) {
+    throw new Error('缺少 BLOB_READ_WRITE_TOKEN');
+  }
+
+  const cutoff = Date.now() - maxAgeMs;
+  let cursor;
+  let deleted = 0;
+  let scanned = 0;
+  let skipped = 0;
+
+  do {
+    const page = await list({ prefix, cursor, limit: 1000 });
+    for (const blob of page.blobs) {
+      scanned += 1;
+      if (maxAgeMs > 0) {
+        const uploadedAt = blob.uploadedAt ? new Date(blob.uploadedAt).getTime() : 0;
+        if (uploadedAt > cutoff) {
+          skipped += 1;
+          continue;
+        }
+      }
+      try {
+        await del(blob.url);
+        deleted += 1;
+      } catch {
+        /* 单条失败继续 */
+      }
+    }
+    cursor = page.hasMore ? page.cursor : undefined;
+  } while (cursor);
+
+  return { deleted, scanned, skipped, prefix, maxAgeMs };
+}

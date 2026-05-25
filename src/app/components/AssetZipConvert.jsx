@@ -82,17 +82,7 @@ export default function AssetZipConvert() {
 
   useEffect(() => () => clearPreview(), []);
 
-  const runConvertRequest = async (payload, fallbackFileName) => {
-    setStage('converting');
-    window.sessionStorage.setItem(PENDING_TASK_KEY, JSON.stringify(payload));
-    setPendingTask(payload);
-    clearPreview();
-
-    const resp = await fetch('/api/asset-convert', {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify(payload),
-    });
+  const finishConvertResponse = async (resp, fallbackFileName, outFormat) => {
     if (!resp.ok) {
       const err = await resp.json().catch(() => null);
       throw new Error(err?.message || err?.error || `转换失败 (${resp.status})`);
@@ -101,7 +91,7 @@ export default function AssetZipConvert() {
     const blob = await resp.blob();
     const buf = await blob.arrayBuffer();
     const dispo = resp.headers.get('content-disposition');
-    const fallbackName = `${(fallbackFileName || 'asset').replace(/\.zip$/i, '')}.${payload.format}`;
+    const fallbackName = `${(fallbackFileName || 'asset').replace(/\.zip$/i, '')}.${outFormat}`;
     const filename = guessFilenameFromDisposition(dispo, fallbackName);
 
     let vapcRaw = null;
@@ -113,7 +103,7 @@ export default function AssetZipConvert() {
         vapcRaw = null;
       }
     }
-    if (payload.format === 'vap' && !vapcRaw) {
+    if (outFormat === 'vap' && !vapcRaw) {
       try {
         vapcRaw = parseVapcFromArrayBuffer(buf);
       } catch {
@@ -130,16 +120,48 @@ export default function AssetZipConvert() {
     a.click();
     a.remove();
 
-    if (payload.format === 'vap' && vapcRaw) {
+    if (outFormat === 'vap' && vapcRaw) {
       setPreviewUrl(URL.createObjectURL(fileBlob));
       setPreviewConfig(vapcRaw);
       setPreviewName(filename);
     } else {
       URL.revokeObjectURL(downloadUrl);
     }
+  };
+
+  const runConvertRequest = async (payload, fallbackFileName) => {
+    setStage('converting');
+    window.sessionStorage.setItem(PENDING_TASK_KEY, JSON.stringify(payload));
+    setPendingTask(payload);
+    clearPreview();
+
+    const resp = await fetch('/api/asset-convert', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    await finishConvertResponse(resp, fallbackFileName, payload.format);
 
     window.sessionStorage.removeItem(PENDING_TASK_KEY);
     setPendingTask(null);
+  };
+
+  const runDirectConvert = async (file, fallbackFileName) => {
+    setStage('converting');
+    clearPreview();
+
+    const fd = new FormData();
+    fd.append('file', file);
+    fd.append('format', format);
+    fd.append('fit', fit);
+    fd.append('fps', String(fps ?? 30));
+    fd.append('pack', pack);
+    if (width) fd.append('width', String(width));
+    if (height) fd.append('height', String(height));
+    fd.append('filename', fallbackFileName || file.name);
+
+    const resp = await fetch('/api/asset-convert', { method: 'POST', body: fd });
+    await finishConvertResponse(resp, fallbackFileName, format);
   };
 
   const onConvert = async () => {
@@ -155,40 +177,49 @@ export default function AssetZipConvert() {
     setLoading(true);
     try {
       await assertLocalZipFile(f);
-      setStage('uploading');
-      const blobPathname = safeZipBlobPathname(f.name);
-      const useMultipart = f.size >= BLOB_MULTIPART_THRESHOLD_BYTES;
-      const uploaded = await upload(blobPathname, f, {
-        access: 'public',
-        handleUploadUrl: '/api/blob/upload',
-        multipart: useMultipart,
-        contentType: 'application/zip',
-        onUploadProgress: (e) => {
-          if (e.total > 0) {
-            const pct = Math.round((e.loaded / e.total) * 100);
-            setStage(`uploading:${pct}`);
-          }
-        },
-      });
 
-      const payload = {
-        blobUrl: uploaded.downloadUrl || uploaded.url,
-        filename: f.name,
-        expectedBytes: f.size,
-        format,
-        fit,
-        fps: Number(fps ?? 30),
-        width: width || null,
-        height: height || null,
-        pack,
-      };
-      await runConvertRequest(payload, f.name);
+      if (f.size < BLOB_MULTIPART_THRESHOLD_BYTES) {
+        await runDirectConvert(f, f.name);
+      } else {
+        setStage('uploading');
+        const blobPathname = safeZipBlobPathname(f.name);
+        const uploaded = await upload(blobPathname, f, {
+          access: 'public',
+          handleUploadUrl: '/api/blob/upload',
+          multipart: true,
+          contentType: 'application/zip',
+          onUploadProgress: (e) => {
+            if (e.total > 0) {
+              const pct = Math.round((e.loaded / e.total) * 100);
+              setStage(`uploading:${pct}`);
+            }
+          },
+        });
+
+        const payload = {
+          blobUrl: uploaded.downloadUrl || uploaded.url,
+          filename: f.name,
+          expectedBytes: f.size,
+          format,
+          fit,
+          fps: Number(fps ?? 30),
+          width: width || null,
+          height: height || null,
+          pack,
+        };
+        await runConvertRequest(payload, f.name);
+      }
       message.success('已生成并开始下载');
     } catch (e) {
       const errMsg = e?.message || '转换失败';
-      if (/maximumSize|文件过大|413|failed|upload/i.test(errMsg)) {
+      if (/storage quota|BLOB_QUOTA|quota exceeded/i.test(errMsg)) {
         message.error(
-          `上传失败：${errMsg}。大于 ${formatBytes(BLOB_MULTIPART_THRESHOLD_BYTES)} 将自动分片上传；单文件上限 ${formatBytes(ASSET_ZIP_MAX_BYTES)}。`,
+          `${errMsg} 临时 ZIP 会在转换后自动删除；请稍后重试，或在 Vercel 控制台清理 Blob 存储（asset-seq/）。`,
+          10,
+        );
+      } else if (/maximumSize|文件过大|413|failed|upload/i.test(errMsg)) {
+        message.error(
+          `上传失败：${errMsg}。大于 ${formatBytes(BLOB_MULTIPART_THRESHOLD_BYTES)} 将走 Blob 分片；单文件上限 ${formatBytes(ASSET_ZIP_MAX_BYTES)}。`,
           8,
         );
       } else {
@@ -276,7 +307,8 @@ export default function AssetZipConvert() {
           <p className='ant-upload-hint'>
             请上传<strong>标准 ZIP</strong>（对「序列帧文件夹」右键压缩，勿用 RAR/7z/分卷）。
             内含 png/jpg/webp，按文件名排序，建议 ≤500 帧。大 ZIP 转换占用云端临时盘（约 512MB），帧数过多可能失败。
-            最大 {formatBytes(ASSET_ZIP_MAX_BYTES)}，超过 {formatBytes(BLOB_MULTIPART_THRESHOLD_BYTES)} 自动分片上传。
+            小于 {formatBytes(BLOB_MULTIPART_THRESHOLD_BYTES)} 直传转换不占 Blob；更大文件走 Blob 分片（转换后自动删除）。最大{' '}
+            {formatBytes(ASSET_ZIP_MAX_BYTES)}。
           </p>
         </Upload.Dragger>
 

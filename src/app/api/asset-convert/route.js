@@ -10,6 +10,7 @@ import JSZip from 'jszip';
 import sharp from 'sharp';
 
 import { ApiError, LIMITS, assertFile, assertMaxFrames, toErrorResponse, withTimeout } from '../_lib/guard';
+import { deleteAssetBlobQuietly, purgeAssetBlobs } from '../../lib/blob-cleanup.server.js';
 import { downloadBlobZipBuffer } from '../../lib/blob-download.server.js';
 import { validateZipBuffer } from '../../lib/zip-extract.server.js';
 import { extractZipImageFrames } from '../../lib/zip-extract.server.js';
@@ -224,6 +225,8 @@ export async function POST(request) {
 
         let zipBuffer = null;
         let inputName = `${stem || 'asset'}.zip`;
+        /** @type {string | null} */
+        let sourceBlobUrl = null;
 
         if (blobUrl) {
           let parsedUrl = null;
@@ -243,6 +246,13 @@ export async function POST(request) {
               413,
               { maxBytes: LIMITS.SVGA_VAP_MAX_BYTES, actualBytes: expectedBytes },
             );
+          }
+
+          sourceBlobUrl = blobUrl;
+          try {
+            await purgeAssetBlobs({ maxAgeMs: 6 * 60 * 60 * 1000 });
+          } catch {
+            /* 清理失败不阻断转换 */
           }
 
           zipBuffer = await downloadBlobZipBuffer(blobUrl, expectedBytes || null, (url, timeoutMs) =>
@@ -390,6 +400,9 @@ export async function POST(request) {
           try {
             await fsp.rm(tmpDir, { recursive: true, force: true });
           } catch (_) {}
+          if (sourceBlobUrl) {
+            await deleteAssetBlobQuietly(sourceBlobUrl);
+          }
         }
       })(),
       540000

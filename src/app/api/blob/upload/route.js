@@ -2,6 +2,7 @@ import { handleUpload } from '@vercel/blob/client';
 import { NextResponse } from 'next/server';
 
 import { ApiError, toErrorResponse } from '../../_lib/guard';
+import { purgeAssetBlobs } from '../../../lib/blob-cleanup.server.js';
 import { ASSET_ZIP_MAX_BYTES } from '../../../lib/upload-limits.js';
 
 const ALLOWED_CONTENT_TYPES = [
@@ -44,6 +45,20 @@ export async function POST(request) {
     const msg = String(error?.message || '');
     if (msg.includes('文件过大') || msg.includes('maximumSize')) {
       return toErrorResponse(new ApiError('FILE_TOO_LARGE', msg, 413));
+    }
+    if (/storage quota exceeded|bad_request/i.test(msg) && /quota/i.test(msg)) {
+      try {
+        await purgeAssetBlobs({ maxAgeMs: 0 });
+      } catch {
+        /* ignore */
+      }
+      return toErrorResponse(
+        new ApiError(
+          'BLOB_QUOTA_EXCEEDED',
+          '云端 Blob 存储已满（Hobby 约 1GB）。已尝试清理历史临时 ZIP，请重新上传；若仍失败请在 Vercel → Storage → Blob 手动删除 asset-seq/ 下文件。',
+          507,
+        ),
+      );
     }
     return toErrorResponse(error);
   }

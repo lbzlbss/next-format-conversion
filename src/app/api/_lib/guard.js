@@ -40,6 +40,13 @@ export function toErrorResponse(error) {
       { hint: 'vercel_tmp_limit_mb: 512' },
     );
   }
+  if (/storage quota exceeded|blob.*quota/i.test(raw)) {
+    return jsonError(
+      'BLOB_QUOTA_EXCEEDED',
+      '云端 Blob 存储已满（Hobby 约 1GB）。站点会在转换后自动删除临时 ZIP；请稍后重试。若仍失败，请在 Vercel 控制台清理 Blob 或升级套餐。',
+      507,
+    );
+  }
   return jsonError('SERVER_ERROR', raw || 'Internal server error', 500);
 }
 
