@@ -2,14 +2,18 @@ import { handleUpload } from '@vercel/blob/client';
 import { NextResponse } from 'next/server';
 
 import { ApiError, toErrorResponse } from '../../_lib/guard';
-import { purgeAssetBlobs } from '../../../lib/blob-cleanup.server.js';
-import { ASSET_ZIP_MAX_BYTES } from '../../../lib/upload-limits.js';
+import { purgeAllTempBlobs, SVGA_BLOB_PREFIX, VAP_BLOB_PREFIX } from '../../../lib/blob-cleanup.server.js';
+import { ASSET_ZIP_MAX_BYTES, VAP_TOOL_MAX_BYTES } from '../../../lib/upload-limits.js';
 
-const ALLOWED_CONTENT_TYPES = [
+const ZIP_CONTENT_TYPES = [
   'application/zip',
   'application/x-zip-compressed',
   'application/octet-stream',
 ];
+
+const VAP_CONTENT_TYPES = ['video/mp4', 'application/octet-stream'];
+
+const SVGA_CONTENT_TYPES = ['application/octet-stream'];
 
 export async function POST(request) {
   try {
@@ -19,14 +23,26 @@ export async function POST(request) {
       request,
       onBeforeGenerateToken: async (pathname, clientPayload) => {
         const requestedSize = Number(clientPayload?.size ?? 0);
-        if (requestedSize > ASSET_ZIP_MAX_BYTES) {
+        const p = String(pathname || '');
+        const isVap = p.startsWith(VAP_BLOB_PREFIX);
+        const isSvga = p.startsWith(SVGA_BLOB_PREFIX);
+        const maxBytes = isVap || isSvga ? VAP_TOOL_MAX_BYTES : ASSET_ZIP_MAX_BYTES;
+
+        if (requestedSize > maxBytes) {
           throw new Error(
-            `文件过大（${Math.ceil(requestedSize / 1024 / 1024)}MB），上限 ${Math.floor(ASSET_ZIP_MAX_BYTES / 1024 / 1024)}MB`
+            `文件过大（${Math.ceil(requestedSize / 1024 / 1024)}MB），上限 ${Math.floor(maxBytes / 1024 / 1024)}MB`,
           );
         }
+
+        const allowedContentTypes = isVap
+          ? VAP_CONTENT_TYPES
+          : isSvga
+            ? SVGA_CONTENT_TYPES
+            : ZIP_CONTENT_TYPES;
+
         return {
-          allowedContentTypes: ALLOWED_CONTENT_TYPES,
-          maximumSizeInBytes: ASSET_ZIP_MAX_BYTES,
+          allowedContentTypes,
+          maximumSizeInBytes: maxBytes,
           addRandomSuffix: true,
         };
       },
@@ -48,7 +64,7 @@ export async function POST(request) {
     }
     if (/storage quota exceeded|bad_request/i.test(msg) && /quota/i.test(msg)) {
       try {
-        await purgeAssetBlobs({ maxAgeMs: 0 });
+        await purgeAllTempBlobs(0);
       } catch {
         /* ignore */
       }

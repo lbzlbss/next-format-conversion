@@ -32,6 +32,8 @@ import {
   RetweetOutlined,
 } from '@ant-design/icons';
 import { useVapWebglPlayer } from '../hooks/useVapWebglPlayer';
+import { postVapApi } from '../lib/vap-api-client';
+import { BLOB_CLIENT_UPLOAD_THRESHOLD_BYTES, formatBytes } from '../lib/upload-limits';
 
 // ─── Context ───────────────────────────────────────────────────────────────────
 const VapContext = createContext(null);
@@ -72,10 +74,7 @@ export function VapProvider({ children }) {
     // Fetch vapc info
     setLoadingInfo(true);
     try {
-      const fd = new FormData();
-      fd.append('file', file);
-      fd.append('action', 'info');
-      const res = await fetch('/api/vap', { method: 'POST', body: fd });
+      const res = await postVapApi({ file, action: 'info' });
       const json = await res.json();
       if (json.config) {
         setVapConfig(json.config);
@@ -93,17 +92,14 @@ export function VapProvider({ children }) {
     if (!vapFile) return message.warning('请先上传 VAP 文件');
     setProcessing(true);
     try {
-      const fd = new FormData();
-      fd.append('file', vapFile);
-      fd.append('action', action);
+      const options =
+        action === 'resize'
+          ? { scaleX, scaleY }
+          : action === 'vap-to-svga'
+            ? { maxFrames, fps: extractFps }
+            : {};
 
-      if (action === 'resize') {
-        fd.append('options', JSON.stringify({ scaleX, scaleY }));
-      } else if (action === 'vap-to-svga') {
-        fd.append('options', JSON.stringify({ maxFrames, fps: extractFps }));
-      }
-
-      const res = await fetch('/api/vap', { method: 'POST', body: fd });
+      const res = await postVapApi({ file: vapFile, action, options });
       if (!res.ok) {
         const err = await res.json().catch(() => ({ error: res.statusText }));
         throw new Error(err.error || '导出失败');
@@ -129,12 +125,11 @@ export function VapProvider({ children }) {
     if (!svgaFile) return message.warning('请先上传 SVGA 文件');
     setProcessing(true);
     try {
-      const fd = new FormData();
-      fd.append('file', svgaFile);
-      fd.append('action', 'svga-to-vap');
-      fd.append('options', JSON.stringify({ scaleX: svgaScaleX, scaleY: svgaScaleY, fps: svgaFps }));
-
-      const res = await fetch('/api/vap', { method: 'POST', body: fd });
+      const res = await postVapApi({
+        file: svgaFile,
+        action: 'svga-to-vap',
+        options: { scaleX: svgaScaleX, scaleY: svgaScaleY, fps: svgaFps },
+      });
       if (!res.ok) {
         const err = await res.json().catch(() => ({ error: res.statusText }));
         throw new Error(err.error || '转换失败');
@@ -244,7 +239,10 @@ export function VapMain() {
           <InboxOutlined />
         </p>
         <p className="ant-upload-text">点击或拖拽上传 VAP 文件</p>
-        <p className="ant-upload-hint">支持 .vap / .mp4 格式（含 vapc box）</p>
+        <p className="ant-upload-hint">
+          支持 .vap / .mp4（含 vapc）。大于 {formatBytes(BLOB_CLIENT_UPLOAD_THRESHOLD_BYTES)} 自动 Blob 直传，绕过
+          Vercel 4.5MB 限制。
+        </p>
       </Upload.Dragger>
 
       {/* Status */}

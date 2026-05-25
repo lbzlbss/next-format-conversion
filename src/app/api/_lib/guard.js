@@ -40,6 +40,14 @@ export function toErrorResponse(error) {
       { hint: 'vercel_tmp_limit_mb: 512' },
     );
   }
+  if (/function_payload_too_large|request entity too large|payload too large/i.test(raw)) {
+    return jsonError(
+      'PAYLOAD_TOO_LARGE',
+      '请求体超过 Vercel 函数上限（约 4.5MB）。大 VAP/SVGA 请用页面上传（自动走 Blob 直传），勿用手写 curl multipart。',
+      413,
+      { hint: 'vercel_function_body_limit_mb: 4.5' },
+    );
+  }
   if (/unsupported image format|input buffer contains unsupported/i.test(raw)) {
     return jsonError(
       'INVALID_FORMAT',

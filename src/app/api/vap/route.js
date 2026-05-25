@@ -11,6 +11,9 @@ import ffmpeg from 'fluent-ffmpeg';
 import sharp from 'sharp';
 import JSZip from 'jszip';
 import protobuf from 'protobufjs';
+import { deleteAssetBlobQuietly } from '../../lib/blob-cleanup.server.js';
+import { downloadBlobBuffer } from '../../lib/blob-download.server.js';
+import { VAP_TOOL_MAX_BYTES } from '../../lib/upload-limits.js';
 import { buildVapcFromSvgaLayout } from '../../lib/vapc-builder.js';
 import { parseVapc, rebuildWithVapc } from '../../lib/vap-mp4.server.js';
 
@@ -543,29 +546,121 @@ function scaleVapConfig(config, scaleX, scaleY) {
   };
 }
 
+async function fetchWithTimeout(url, timeoutMs = 120_000) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    return await fetch(url, { signal: controller.signal, cache: 'no-store' });
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+/**
+ * @param {Request} request
+ * @returns {Promise<{ fileBuffer: Buffer, action: string, options: Record<string, unknown>, sourceBlobUrl: string | null }>}
+ */
+async function resolveVapInput(request) {
+  const contentType = String(request.headers.get('content-type') || '').toLowerCase();
+
+  if (contentType.includes('application/json')) {
+    const body = await request.json();
+    const blobUrl = String(body?.blobUrl || '').trim();
+    const action = String(body?.action || 'info');
+    let options = {};
+    try {
+      options = typeof body?.options === 'object' && body?.options ? body.options : JSON.parse(body?.options || '{}');
+    } catch {
+      options = {};
+    }
+
+    if (!blobUrl) {
+      throw Object.assign(new Error('缺少 blobUrl'), { status: 400 });
+    }
+
+    let parsedUrl;
+    try {
+      parsedUrl = new URL(blobUrl);
+    } catch {
+      throw Object.assign(new Error('blobUrl 无效'), { status: 400 });
+    }
+    if (parsedUrl.protocol !== 'https:') {
+      throw Object.assign(new Error('blobUrl 仅支持 https'), { status: 400 });
+    }
+
+    const expectedBytes = Number(body?.expectedBytes) || 0;
+    if (expectedBytes > VAP_TOOL_MAX_BYTES) {
+      throw Object.assign(new Error(`文件过大，上限 ${Math.floor(VAP_TOOL_MAX_BYTES / 1024 / 1024)}MB`), {
+        status: 413,
+      });
+    }
+
+    const fileBuffer = await downloadBlobBuffer(blobUrl, expectedBytes || null, (url, timeoutMs) =>
+      fetchWithTimeout(url, timeoutMs),
+    );
+
+    if (fileBuffer.length > VAP_TOOL_MAX_BYTES) {
+      throw Object.assign(new Error(`文件过大，上限 ${Math.floor(VAP_TOOL_MAX_BYTES / 1024 / 1024)}MB`), {
+        status: 413,
+      });
+    }
+
+    return { fileBuffer, action, options, sourceBlobUrl: blobUrl };
+  }
+
+  const formData = await request.formData();
+  const file = formData.get('file');
+  const action = String(formData.get('action') || 'info');
+  const optRaw = formData.get('options') || '{}';
+  let options = {};
+  try {
+    options = JSON.parse(String(optRaw));
+  } catch {
+    options = {};
+  }
+
+  if (!file || typeof file.arrayBuffer !== 'function' || file.size === 0) {
+    throw Object.assign(new Error('未提供文件或文件为空'), { status: 400 });
+  }
+
+  if (file.size > VAP_TOOL_MAX_BYTES) {
+    throw Object.assign(new Error(`文件过大，请使用页面上传（>4MB 自动走 Blob），上限 ${Math.floor(VAP_TOOL_MAX_BYTES / 1024 / 1024)}MB`), {
+      status: 413,
+    });
+  }
+
+  const fileBuffer = Buffer.from(await file.arrayBuffer());
+  return { fileBuffer, action, options, sourceBlobUrl: null };
+}
+
 // ─── POST handler ──────────────────────────────────────────────────────────────
 export async function POST(request) {
   const tmpFiles = [];
   const tmpDirs = [];
+  /** @type {string | null} */
+  let sourceBlobUrl = null;
 
   const cleanup = async () => {
     for (const f of tmpFiles) await fsp.unlink(f).catch(() => {});
     for (const d of tmpDirs) await fsp.rm(d, { recursive: true, force: true }).catch(() => {});
+    if (sourceBlobUrl) await deleteAssetBlobQuietly(sourceBlobUrl);
   };
 
   try {
-    const formData = await request.formData();
-    const file = formData.get('file');
-    const action = formData.get('action') || 'info';
-    const optRaw = formData.get('options') || '{}';
-    let options = {};
-    try { options = JSON.parse(optRaw); } catch { /* ignore */ }
+    let fileBuffer;
+    let action;
+    let options;
 
-    if (!file || file.size === 0) {
-      return NextResponse.json({ error: '未提供文件或文件为空' }, { status: 400 });
+    try {
+      const input = await resolveVapInput(request);
+      fileBuffer = input.fileBuffer;
+      action = input.action;
+      options = input.options;
+      sourceBlobUrl = input.sourceBlobUrl;
+    } catch (e) {
+      const status = Number(e?.status) || 400;
+      return NextResponse.json({ error: e?.message || '请求无效' }, { status });
     }
-
-    const fileBuffer = Buffer.from(await file.arrayBuffer());
 
     // ── info ────────────────────────────────────────────────────────────────
     if (action === 'info') {

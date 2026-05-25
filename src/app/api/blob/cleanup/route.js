@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 
 import { ApiError, jsonError, toErrorResponse } from '../../_lib/guard.js';
-import { purgeAssetBlobs } from '../../../lib/blob-cleanup.server.js';
+import { purgeAllTempBlobs, purgeAssetBlobs, TEMP_BLOB_PREFIXES } from '../../../lib/blob-cleanup.server.js';
 
 function assertCleanupAuth(request) {
   const secret = process.env.CRON_SECRET || process.env.BLOB_CLEANUP_SECRET;
@@ -34,8 +34,11 @@ async function runCleanup(request) {
     const maxAgeMs =
       Number.isFinite(maxAgeHours) && maxAgeHours >= 0 ? maxAgeHours * 60 * 60 * 1000 : 24 * 60 * 60 * 1000;
 
-    const result = await purgeAssetBlobs({ maxAgeMs });
-    return NextResponse.json({ ok: true, ...result });
+    const prefix = searchParams.get('prefix');
+    const result = prefix
+      ? await purgeAssetBlobs({ prefix, maxAgeMs })
+      : await purgeAllTempBlobs(maxAgeMs);
+    return NextResponse.json({ ok: true, prefixes: prefix ? [prefix] : TEMP_BLOB_PREFIXES, result });
   } catch (e) {
     if (e instanceof ApiError && e.code === 'UNAUTHORIZED') {
       return jsonError(e.code, e.message, e.status);

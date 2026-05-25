@@ -3,8 +3,17 @@ import { detectArchiveKind, findZipMagicOffset, invalidZipUserMessage } from './
 
 export const ASSET_ZIP_MAX_BYTES = 600 * 1024 * 1024;
 
+/** Vercel Serverless 请求/响应体硬上限（无法通过 next.config 提高） */
+export const VERCEL_FUNCTION_BODY_LIMIT_BYTES = 4.5 * 1024 * 1024;
+
+/** 超过此大小改走 Blob 直传 + JSON 调 API，避免 FUNCTION_PAYLOAD_TOO_LARGE */
+export const BLOB_CLIENT_UPLOAD_THRESHOLD_BYTES = 4 * 1024 * 1024;
+
 /** 超过此大小使用 Vercel Blob multipart 直传（官方建议 >100MB） */
 export const BLOB_MULTIPART_THRESHOLD_BYTES = 100 * 1024 * 1024;
+
+/** VAP / SVGA 工具经 Blob 临时上传上限 */
+export const VAP_TOOL_MAX_BYTES = 200 * 1024 * 1024;
 
 const LOCAL_SNIFF_BYTES = 262144;
 
@@ -40,4 +49,20 @@ export function safeZipBlobPathname(originalName) {
     .replace(/[^\w.-]+/g, '_')
     .slice(0, 48);
   return `asset-seq/${Date.now()}-${stem || 'frames'}.zip`;
+}
+
+export function safeVapBlobPathname(originalName) {
+  const stem = String(originalName || 'asset')
+    .replace(/\.(vap|mp4)$/i, '')
+    .replace(/[^\w.-]+/g, '_')
+    .slice(0, 48);
+  return `asset-vap/${Date.now()}-${stem || 'vap'}.vap`;
+}
+
+export function safeSvgaBlobPathname(originalName) {
+  const stem = String(originalName || 'asset')
+    .replace(/\.svga$/i, '')
+    .replace(/[^\w.-]+/g, '_')
+    .slice(0, 48);
+  return `asset-svga/${Date.now()}-${stem || 'anim'}.svga`;
 }

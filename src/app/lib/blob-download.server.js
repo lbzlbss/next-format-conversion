@@ -84,3 +84,38 @@ export async function downloadBlobZipBuffer(blobUrl, expectedBytes, fetcher) {
   validateZipBuffer(zipBuffer, expectedBytes || Number(res.headers.get('content-length') || 0) || null);
   return zipBuffer;
 }
+
+/**
+ * 从 Blob 下载任意二进制（VAP/SVGA 等，不做 ZIP 校验）
+ * @param {string} blobUrl
+ * @param {number | null} expectedBytes
+ * @param {(url: string, ms: number) => Promise<Response>} fetcher
+ */
+export async function downloadBlobBuffer(blobUrl, expectedBytes, fetcher) {
+  const downloadUrl = normalizeVercelBlobDownloadUrl(blobUrl);
+  const timeoutMs =
+    expectedBytes > 0
+      ? Math.min(600_000, Math.max(60_000, Math.ceil((expectedBytes / (1024 * 1024)) * 2000)))
+      : 120_000;
+
+  const res = await fetcher(downloadUrl, timeoutMs);
+  if (!res.ok) {
+    throw new ApiError('BLOB_FETCH_FAILED', `下载 Blob 失败 (${res.status})`, 502);
+  }
+
+  const ct = String(res.headers.get('content-type') || '').toLowerCase();
+  if (ct.includes('text/html')) {
+    throw new ApiError('BLOB_FETCH_FAILED', 'Blob 响应为 HTML，未获取到文件内容', 502, { contentType: ct });
+  }
+
+  const buf = Buffer.from(await res.arrayBuffer());
+  if (expectedBytes > 0 && buf.length !== expectedBytes) {
+    throw new ApiError(
+      'BLOB_FETCH_FAILED',
+      `Blob 下载不完整：期望 ${expectedBytes} 字节，实际 ${buf.length} 字节`,
+      502,
+      { expectedBytes, actualBytes: buf.length },
+    );
+  }
+  return buf;
+}

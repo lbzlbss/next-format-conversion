@@ -1,7 +1,10 @@
 import { del, list } from '@vercel/blob';
 
-/** 序列帧 ZIP 在 Blob 中的路径前缀（与 safeZipBlobPathname 一致） */
+/** 临时 Blob 路径前缀 */
 export const ASSET_BLOB_PREFIX = 'asset-seq/';
+export const VAP_BLOB_PREFIX = 'asset-vap/';
+export const SVGA_BLOB_PREFIX = 'asset-svga/';
+export const TEMP_BLOB_PREFIXES = [ASSET_BLOB_PREFIX, VAP_BLOB_PREFIX, SVGA_BLOB_PREFIX];
 
 const VERCEL_BLOB_HOST_RE = /(?:^|\.)((?:public\.)?blob\.vercel-storage\.com|vercel-storage\.com)$/i;
 
@@ -70,4 +73,13 @@ export async function purgeAssetBlobs({ prefix = ASSET_BLOB_PREFIX, maxAgeMs = 2
   } while (cursor);
 
   return { deleted, scanned, skipped, prefix, maxAgeMs };
+}
+
+/** 清理所有临时前缀 */
+export async function purgeAllTempBlobs(maxAgeMs = 24 * 60 * 60 * 1000) {
+  const results = [];
+  for (const prefix of TEMP_BLOB_PREFIXES) {
+    results.push(await purgeAssetBlobs({ prefix, maxAgeMs }));
+  }
+  return results;
 }
