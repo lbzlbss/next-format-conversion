@@ -2,7 +2,6 @@
 
 import {
   useState,
-  useRef,
   useEffect,
   useCallback,
   createContext,
@@ -32,363 +31,14 @@ import {
   ExperimentOutlined,
   RetweetOutlined,
 } from '@ant-design/icons';
-
-// ─── useVapCanvasPlayer hook (2D canvas compositing) ───────────────────────────
-function useVapCanvasPlayer(videoElRef, beforeCanvasRef, canvasRef) {
-  const rafRef     = useRef(null);
-  const configRef  = useRef(null);
-  const offRgbRef  = useRef(null);
-  const offARef    = useRef(null);
-  const beforeModeRef = useRef('raw'); // 'raw' | 'rgb'
-  const cleanupRef = useRef(null);
-  const didSeekRef = useRef(false);
-
-  const [playing, setPlaying]   = useState(false);
-  const [duration, setDuration] = useState(0);
-  const [currentTime, setCurrentTime] = useState(0);
-  const [hasAlpha, setHasAlpha] = useState(false);
-  const [canPlay, setCanPlay] = useState(false);
-  const [debug, setDebug] = useState({
-    readyState: 0,
-    networkState: 0,
-    paused: true,
-    ended: false,
-    error: null,
-    lastEvent: '',
-  });
-
-  const ensureOffscreen = useCallback((w, h) => {
-    if (!offRgbRef.current) offRgbRef.current = document.createElement('canvas');
-    if (!offARef.current) offARef.current = document.createElement('canvas');
-    const rgbC = offRgbRef.current;
-    const aC = offARef.current;
-    if (rgbC.width !== w || rgbC.height !== h) {
-      rgbC.width = w;
-      rgbC.height = h;
-    }
-    if (aC.width !== w || aC.height !== h) {
-      aC.width = w;
-      aC.height = h;
-    }
-    return { rgbC, aC };
-  }, []);
-
-  const drawFrame2d = useCallback(() => {
-    const video = videoElRef.current;
-    const canvas = canvasRef.current;
-    if (!video || !canvas) return;
-    if (video.readyState < 2) return;
-
-    const vw = video.videoWidth;
-    const vh = video.videoHeight;
-    if (!vw || !vh) return;
-
-    const cfg = configRef.current;
-    const info = cfg?.info;
-
-    const normRect = (r) => {
-      if (!r) return null;
-      // Support array form: [x, y, w, h]
-      if (Array.isArray(r) && r.length >= 4) {
-        const x = Number(r[0] ?? 0);
-        const y = Number(r[1] ?? 0);
-        const w = Number(r[2] ?? 0);
-        const h = Number(r[3] ?? 0);
-        if (!Number.isFinite(x) || !Number.isFinite(y) || !Number.isFinite(w) || !Number.isFinite(h)) return null;
-        return { x, y, w, h };
-      }
-      const x = Number(r.x ?? 0);
-      const y = Number(r.y ?? 0);
-      const w = Number(r.w ?? r.width ?? 0);
-      const h = Number(r.h ?? r.height ?? 0);
-      if (!Number.isFinite(x) || !Number.isFinite(y) || !Number.isFinite(w) || !Number.isFinite(h)) return null;
-      return { x, y, w, h };
-    };
-
-    const normInfoWH = (v, fallback) => {
-      const n = Number(v);
-      return Number.isFinite(n) && n > 0 ? n : fallback;
-    };
-
-    // Resolve output size and layout
-    const videoW = normInfoWH(info?.videoW, vw);
-    const videoH = normInfoWH(info?.videoH, vh);
-    const displayW = normInfoWH(info?.w, Math.floor(videoW / 2));
-    const displayH = normInfoWH(info?.h, videoH);
-
-    const rl0 = normRect(info?.rgbLayout ?? info?.rgbFrame);
-    const al0 = normRect(info?.aLayout ?? info?.aFrame);
-    const halfW = Math.floor(videoW / 2);
-    const rl = rl0 ?? { x: 0, y: 0, w: halfW, h: videoH };
-    const al = al0 ?? { x: halfW, y: 0, w: halfW, h: videoH };
-    const hasVapcLayout = !!(rl && al);
-
-    const outW = hasVapcLayout ? displayW : vw;
-    const outH = hasVapcLayout ? displayH : vh;
-
-    // 1) 合成后（canvasRef）：无 vapc 就直接画原始帧；有 vapc 就合成 RGBA
-    if (canvas.width !== outW || canvas.height !== outH) {
-      canvas.width = outW;
-      canvas.height = outH;
-    }
-    const ctx = canvas.getContext('2d', { alpha: true, willReadFrequently: true });
-    if (!ctx) return;
-    ctx.clearRect(0, 0, outW, outH);
-
-    if (!hasVapcLayout) {
-      ctx.drawImage(video, 0, 0, vw, vh, 0, 0, outW, outH);
-    } else {
-      const { rgbC, aC } = ensureOffscreen(outW, outH);
-      const rgbCtx = rgbC.getContext('2d', { alpha: true, willReadFrequently: true });
-      const aCtx = aC.getContext('2d', { alpha: true, willReadFrequently: true });
-      if (!rgbCtx || !aCtx) return;
-
-      rgbCtx.clearRect(0, 0, outW, outH);
-      aCtx.clearRect(0, 0, outW, outH);
-      rgbCtx.drawImage(video, rl.x, rl.y, rl.w, rl.h, 0, 0, outW, outH);
-      aCtx.drawImage(video, al.x, al.y, al.w, al.h, 0, 0, outW, outH);
-
-      const rgbImg = rgbCtx.getImageData(0, 0, outW, outH);
-      const aImg = aCtx.getImageData(0, 0, outW, outH);
-      const rgbData = rgbImg.data;
-      const aData = aImg.data;
-      for (let i = 0; i < rgbData.length; i += 4) {
-        rgbData[i + 3] = aData[i]; // grayscale alpha in R channel
-      }
-      ctx.putImageData(rgbImg, 0, 0);
-    }
-
-    // 2) 合成前仅 RGB（beforeCanvasRef）：当 mode=rgb 且 vapc layout 存在时绘制
-    const beforeMode = beforeModeRef.current;
-    const beforeCanvas = beforeCanvasRef.current;
-    if (beforeCanvas && beforeMode === 'rgb' && hasVapcLayout) {
-      if (beforeCanvas.width !== outW || beforeCanvas.height !== outH) {
-        beforeCanvas.width = outW;
-        beforeCanvas.height = outH;
-      }
-      const bctx = beforeCanvas.getContext('2d', { alpha: true });
-      if (!bctx) return;
-      bctx.clearRect(0, 0, outW, outH);
-      bctx.drawImage(video, rl.x, rl.y, rl.w, rl.h, 0, 0, outW, outH);
-    }
-  }, [canvasRef, ensureOffscreen, videoElRef]);
-
-  const animLoop = useCallback(() => {
-    drawFrame2d();
-    rafRef.current = requestAnimationFrame(animLoop);
-  }, [drawFrame2d]);
-
-  const load = useCallback((srcUrl, config) => {
-    // cleanup previous listeners
-    if (cleanupRef.current) {
-      try { cleanupRef.current(); } catch (_) {}
-      cleanupRef.current = null;
-    }
-    if (rafRef.current) cancelAnimationFrame(rafRef.current);
-    setPlaying(false);
-    setCanPlay(false);
-    didSeekRef.current = false;
-
-    configRef.current = config;
-    const info = config?.info ?? {};
-    setHasAlpha(!!((info.aLayout && info.rgbLayout) || (info.aFrame && info.rgbFrame)));
-
-    const vid = videoElRef.current;
-    if (!vid) return;
-
-    // Attach src to the visible <video> element
-    if (vid.src !== srcUrl) vid.src = srcUrl;
-    vid.loop = true;
-    vid.muted = true;
-    vid.playsInline = true;
-    vid.crossOrigin = 'anonymous';
-    vid.preload = 'auto';
-
-    setDebug((d) => ({
-      ...d,
-      readyState: vid.readyState,
-      networkState: vid.networkState,
-      paused: vid.paused,
-      ended: vid.ended,
-      error: vid.error ? { code: vid.error.code, message: vid.error.message } : null,
-      lastEvent: 'load()',
-    }));
-
-    // Ensure the new src is actually loaded (esp. on Safari / after src switch)
-    try {
-      vid.load();
-    } catch (_) {}
-
-    const onLoadedMeta = () => setDuration(Number.isFinite(vid.duration) ? vid.duration : 0);
-    const onCanPlay = () => {
-      setCanPlay(true);
-      // Only seek once after a fresh load; repeated canplay during playback would rewind.
-      if (!didSeekRef.current) {
-        didSeekRef.current = true;
-        try {
-          vid.currentTime = 0;
-        } catch (_) {}
-      }
-      drawFrame2d();
-    };
-    const onTimeUpdate = () => setCurrentTime(vid.currentTime);
-    const onEnded = () => setPlaying(false);
-    const onPlay = () => setPlaying(true);
-    const onPause = () => setPlaying(false);
-    const onError = () => {
-      setCanPlay(false);
-      setDebug({
-        readyState: vid.readyState,
-        networkState: vid.networkState,
-        paused: vid.paused,
-        ended: vid.ended,
-        error: vid.error ? { code: vid.error.code, message: vid.error.message } : null,
-        lastEvent: 'error',
-      });
-    };
-    const mkDebugEvent = (name) => () => {
-      setDebug({
-        readyState: vid.readyState,
-        networkState: vid.networkState,
-        paused: vid.paused,
-        ended: vid.ended,
-        error: vid.error ? { code: vid.error.code, message: vid.error.message } : null,
-        lastEvent: name,
-      });
-    };
-    const onWaiting = mkDebugEvent('waiting');
-    const onStalled = mkDebugEvent('stalled');
-    const onSuspend = mkDebugEvent('suspend');
-    const onLoadedData = () => {
-      // loadeddata implies HAVE_CURRENT_DATA
-      setCanPlay(vid.readyState >= 2);
-    };
-    const onCanPlayThrough = () => {
-      setCanPlay(true);
-    };
-
-    vid.addEventListener('loadedmetadata', onLoadedMeta);
-    vid.addEventListener('canplay', onCanPlay);
-    vid.addEventListener('timeupdate', onTimeUpdate);
-    vid.addEventListener('ended', onEnded);
-    vid.addEventListener('play', onPlay);
-    vid.addEventListener('pause', onPause);
-    vid.addEventListener('error', onError);
-    vid.addEventListener('waiting', onWaiting);
-    vid.addEventListener('stalled', onStalled);
-    vid.addEventListener('suspend', onSuspend);
-    vid.addEventListener('loadeddata', onLoadedData);
-    vid.addEventListener('canplaythrough', onCanPlayThrough);
-
-    rafRef.current = requestAnimationFrame(animLoop);
-
-    // Cleanup listeners on next load
-    cleanupRef.current = () => {
-      vid.removeEventListener('loadedmetadata', onLoadedMeta);
-      vid.removeEventListener('canplay', onCanPlay);
-      vid.removeEventListener('timeupdate', onTimeUpdate);
-      vid.removeEventListener('ended', onEnded);
-      vid.removeEventListener('play', onPlay);
-      vid.removeEventListener('pause', onPause);
-      vid.removeEventListener('error', onError);
-      vid.removeEventListener('waiting', onWaiting);
-      vid.removeEventListener('stalled', onStalled);
-      vid.removeEventListener('suspend', onSuspend);
-      vid.removeEventListener('loadeddata', onLoadedData);
-      vid.removeEventListener('canplaythrough', onCanPlayThrough);
-    };
-  }, [animLoop, drawFrame2d, videoElRef]);
-
-  const play = useCallback(() => {
-    const v = videoElRef.current;
-    if (!v) return;
-    if (!v.src) {
-      message.warning('视频未加载完成，请重新上传或稍等');
-      return;
-    }
-    if (v.readyState < 2) {
-      // Not ready yet — UI will show disabled, but keep a safe guard here.
-      return;
-    }
-
-    const doPlay = () => {
-      try {
-        const p = v.play();
-        if (p && typeof p.then === 'function') {
-          p.catch((e) => {
-            console.error('[vap player] video.play() failed', e);
-            message.error(`播放失败：${e?.message || e || 'unknown error'}`);
-          });
-        }
-      } catch (e) {
-        console.error('[vap player] video.play() threw', e);
-        message.error(`播放失败：${e?.message || e || 'unknown error'}`);
-      }
-    };
-
-    // If not ready, wait for canplay once, then play.
-    if (v.readyState < 2) {
-      const onReadyOnce = () => {
-        v.removeEventListener('canplay', onReadyOnce);
-        v.removeEventListener('canplaythrough', onReadyOnce);
-        doPlay();
-      };
-      // Some browsers may fire canplaythrough without firing canplay reliably
-      v.addEventListener('canplay', onReadyOnce);
-      v.addEventListener('canplaythrough', onReadyOnce);
-      try {
-        v.load();
-      } catch (_) {}
-      return;
-    }
-
-    doPlay();
-  }, [videoElRef]);
-
-  const pause = useCallback(() => {
-    const v = videoElRef.current;
-    if (!v) return;
-    v.pause();
-    setPlaying(false);
-  }, [videoElRef]);
-
-  const seekTo = useCallback((t) => {
-    const v = videoElRef.current;
-    if (!v) return;
-    v.currentTime = t;
-    drawFrame2d();
-  }, [drawFrame2d, videoElRef]);
-
-  const destroy = useCallback(() => {
-    if (rafRef.current) cancelAnimationFrame(rafRef.current);
-    if (cleanupRef.current) {
-      try { cleanupRef.current(); } catch (_) {}
-      cleanupRef.current = null;
-    }
-    const v = videoElRef.current;
-    if (v) {
-      v.pause();
-      v.src = '';
-    }
-    setPlaying(false);
-  }, [videoElRef]);
-
-  const setBeforeMode = useCallback((mode) => {
-    beforeModeRef.current = mode === 'rgb' ? 'rgb' : 'raw';
-  }, []);
-
-  return { playing, duration, currentTime, hasAlpha, canPlay, debug, load, play, pause, seekTo, destroy, setBeforeMode };
-}
+import { useVapWebglPlayer } from '../hooks/useVapWebglPlayer';
 
 // ─── Context ───────────────────────────────────────────────────────────────────
 const VapContext = createContext(null);
 
 // ─── VapProvider ───────────────────────────────────────────────────────────────
 export function VapProvider({ children }) {
-  const canvasRef = useRef(null);
-  const videoRef = useRef(null);
-  const beforeCanvasRef = useRef(null);
-  const player    = useVapCanvasPlayer(videoRef, beforeCanvasRef, canvasRef);
+  const player = useVapWebglPlayer();
 
   const [vapFile,    setVapFile]    = useState(null);   // File object
   const [vapUrl,     setVapUrl]     = useState(null);   // object URL
@@ -430,8 +80,7 @@ export function VapProvider({ children }) {
       if (json.config) {
         setVapConfig(json.config);
       } else {
-        // No vapc — still load video for preview
-        message.warning(json.error || '无法解析 vapc 配置，将以原始视频模式预览');
+        message.warning(json.error || '无法解析 vapc 配置，WebGL 合成预览需要 vapc box');
       }
     } catch (e) {
       message.error('解析 VAP 失败: ' + e.message);
@@ -506,7 +155,7 @@ export function VapProvider({ children }) {
   }, [svgaFile, svgaScaleX, svgaScaleY, svgaFps]);
 
   const value = useMemo(() => ({
-    canvasRef, beforeCanvasRef, videoRef, player,
+    player,
     vapFile, vapUrl, vapConfig,
     loadingInfo, processing,
     action, setAction,
@@ -521,7 +170,7 @@ export function VapProvider({ children }) {
     svgaScaleY, setSvgaScaleY,
     handleFile, handleExport, handleSvgaToVap,
   }), [
-    canvasRef, beforeCanvasRef, videoRef, player,
+    player,
     vapFile, vapUrl, vapConfig,
     loadingInfo, processing,
     action,
@@ -544,53 +193,29 @@ export function VapProvider({ children }) {
 // ─── VapMain ───────────────────────────────────────────────────────────────────
 export function VapMain() {
   const {
-    canvasRef, beforeCanvasRef, videoRef, player,
+    player,
     vapFile, vapUrl, vapConfig,
     loadingInfo, handleFile,
   } = useContext(VapContext);
 
-  const { playing, duration, currentTime, hasAlpha, canPlay, play, pause, load, setBeforeMode } = player;
-  const [showRgbOnly, setShowRgbOnly] = useState(false);
-  const [debugBottom, setDebugBottom] = useState({
-    readyState: 0,
-    networkState: 0,
-    paused: true,
-    ended: false,
-    currentTime: 0,
-    duration: 0,
-    error: null,
-  });
+  const {
+    containerRef,
+    playing,
+    duration,
+    currentTime,
+    hasAlpha,
+    canPlay,
+    webglSupported,
+    loadError,
+    play,
+    pause,
+    load,
+  } = player;
 
-  useEffect(() => {
-    setBeforeMode(showRgbOnly ? 'rgb' : 'raw');
-  }, [setBeforeMode, showRgbOnly]);
-
-  // IMPORTANT: load the video AFTER <video> mounts, otherwise videoRef.current is null
   useEffect(() => {
     if (!vapUrl) return;
     load(vapUrl, vapConfig);
   }, [load, vapConfig, vapUrl]);
-
-  // Bottom debug info (low-frequency snapshot; avoids UI flicker)
-  useEffect(() => {
-    if (!vapUrl) return;
-    const tick = () => {
-      const v = videoRef.current;
-      if (!v) return;
-      setDebugBottom({
-        readyState: v.readyState,
-        networkState: v.networkState,
-        paused: v.paused,
-        ended: v.ended,
-        currentTime: Number.isFinite(v.currentTime) ? v.currentTime : 0,
-        duration: Number.isFinite(v.duration) ? v.duration : 0,
-        error: v.error ? { code: v.error.code, message: v.error.message } : null,
-      });
-    };
-    tick();
-    const id = window.setInterval(tick, 400);
-    return () => window.clearInterval(id);
-  }, [vapUrl, videoRef]);
 
   const beforeUpload = useCallback((file) => {
     handleFile(file);
@@ -603,10 +228,8 @@ export function VapMain() {
     return `${m}:${s}`;
   };
 
-  const fmtReadyState = (v) => ['HAVE_NOTHING', 'HAVE_METADATA', 'HAVE_CURRENT_DATA', 'HAVE_FUTURE_DATA', 'HAVE_ENOUGH_DATA'][v] ?? String(v);
-  const fmtNetworkState = (v) => ['NETWORK_EMPTY', 'NETWORK_IDLE', 'NETWORK_LOADING', 'NETWORK_NO_SOURCE'][v] ?? String(v);
-
-  const info = vapConfig?.info;
+  const info = vapConfig?.info ?? vapConfig;
+  const previewW = info?.w ? Math.min(Number(info.w), 720) : undefined;
 
   return (
     <div className="flex flex-col gap-4">
@@ -644,68 +267,48 @@ export function VapMain() {
         </div>
       )}
 
-      {/* Debug strip removed (was causing flicker) */}
+      {!webglSupported && vapUrl && (
+        <Alert type="warning" showIcon message="当前浏览器不支持 WebGL，无法使用 VAP 合成预览" />
+      )}
 
-      {/* Canvas preview — always rendered once vapUrl is set so canvasRef mounts */}
-      {vapUrl && (
+      {loadError && (
+        <Alert type="error" showIcon message={loadError} />
+      )}
+
+      {!vapConfig && vapUrl && !loadingInfo && (
+        <Alert
+          type="info"
+          showIcon
+          message="未检测到 vapc"
+          description="请上传含 vapc box 的 .vap / .mp4，或使用「SVGA → VAP」生成后再预览。"
+        />
+      )}
+
+      {vapUrl && vapConfig && (
         <div className="flex flex-col items-center gap-3">
-          {/* Before/After preview */}
-          <div className="grid w-full grid-cols-1 gap-3 md:grid-cols-2">
-            {/* 合成前：原始视频（包含 RGB/Alpha 拼接布局） */}
-            <div className="flex flex-col gap-2">
-              <div className="flex items-center justify-between gap-2">
-                <div className="text-xs text-mf-muted">
-                  合成前（{showRgbOnly ? '仅 RGB' : '原始视频'}）
-                </div>
-                <Button
-                  size="small"
-                  onClick={() => setShowRgbOnly((v) => !v)}
-                  disabled={!hasAlpha}
-                >
-                  {showRgbOnly ? '看原始视频' : '只看 RGB'}
-                </Button>
-              </div>
-              <div className="relative overflow-hidden rounded-xl border border-mf-border bg-black">
-                <video
-                  ref={videoRef}
-                  style={{
-                    display: showRgbOnly ? 'none' : 'block',
-                    width: '100%',
-                    maxHeight: 360,
-                    objectFit: 'contain',
-                  }}
-                />
-                <canvas
-                  ref={beforeCanvasRef}
-                  style={{
-                    display: showRgbOnly ? 'block' : 'none',
-                    width: '100%',
-                    maxHeight: 360,
-                  }}
-                />
-              </div>
+          <div className="w-full">
+            <div className="mb-2 flex flex-wrap items-center gap-2">
+              <span className="text-xs text-mf-muted">VAP 透明合成预览</span>
+              <Tag color="purple">video-animation-player · WebGL</Tag>
             </div>
-
-            {/* 合成后：canvas 合成透明通道 */}
-            <div className="flex flex-col gap-2">
-              <div className="text-xs text-mf-muted">合成后（Canvas 透明合成）</div>
+            <div
+              className="relative mx-auto overflow-hidden rounded-xl border border-mf-border"
+              style={{
+                width: previewW ? `${previewW}px` : '100%',
+                maxWidth: '100%',
+                background: hasAlpha
+                  ? 'repeating-conic-gradient(#e2e8f0 0% 25%, #f8fafd 0% 50%) 0 0 / 16px 16px'
+                  : '#000',
+              }}
+            >
               <div
-                className="relative overflow-hidden rounded-xl border border-mf-border"
-                style={{
-                  background: hasAlpha
-                    ? 'repeating-conic-gradient(#e2e8f0 0% 25%, #f8fafd 0% 50%) 0 0 / 16px 16px'
-                    : '#000',
-                }}
-              >
-                <canvas
-                  ref={canvasRef}
-                  style={{ display: 'block', width: '100%', maxHeight: 360 }}
-                />
-              </div>
+                ref={containerRef}
+                className="vap-webgl-container flex min-h-[120px] items-center justify-center"
+                style={{ width: '100%', minHeight: info?.h ? Math.min(Number(info.h), 360) : 200 }}
+              />
             </div>
           </div>
 
-          {/* Controls */}
           <div className="flex items-center gap-3">
             <Button
               type="primary"
@@ -714,8 +317,8 @@ export function VapMain() {
               onClick={playing ? pause : play}
               disabled={!canPlay && !playing}
             />
-            {!canPlay && !playing && (
-              <span className="text-xs text-mf-muted">加载中…</span>
+            {!canPlay && !playing && !loadError && (
+              <span className="text-xs text-mf-muted">WebGL 初始化中…</span>
             )}
             <span className="text-sm tabular-nums text-mf-muted">
               {fmtTime(currentTime)} / {fmtTime(duration)}
@@ -731,24 +334,6 @@ export function VapMain() {
         </div>
       )}
 
-      {/* Debug at bottom */}
-      {vapUrl && (
-        <div className="mt-2 rounded-lg border border-mf-border bg-mf-canvas px-3 py-2 text-xs text-mf-muted">
-          <div className="flex flex-wrap gap-x-3 gap-y-1 font-mono">
-            <span>readyState={fmtReadyState(debugBottom.readyState)}</span>
-            <span>networkState={fmtNetworkState(debugBottom.networkState)}</span>
-            <span>paused={String(debugBottom.paused)}</span>
-            <span>ended={String(debugBottom.ended)}</span>
-            <span>t={debugBottom.currentTime.toFixed(2)}/{debugBottom.duration.toFixed(2)}</span>
-            {debugBottom.error && (
-              <span className="text-red-600">error={String(debugBottom.error.code)} {debugBottom.error.message || ''}</span>
-            )}
-          </div>
-          {!canPlay && (
-            <div className="mt-1 text-mf-muted">提示：需要等 readyState 到 HAVE_CURRENT_DATA 以上，播放键才可用。</div>
-          )}
-        </div>
-      )}
     </div>
   );
 }
