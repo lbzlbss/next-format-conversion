@@ -25,7 +25,7 @@ export function normalizeVapConfigForPlayer(raw) {
 
   const w = Number(info.w) || 375;
   const h = Number(info.h) || 375;
-  const fps = Number(info.fps ?? info.f) || 30;
+  const fps = Number(info.fps) || 30;
 
   let rgbFrame = layoutRect(info.rgbFrame ?? info.rgbLayout);
   let aFrame = layoutRect(info.aFrame ?? info.aLayout);
@@ -45,7 +45,7 @@ export function normalizeVapConfigForPlayer(raw) {
   return {
     info: {
       v: Number(info.v) || 2,
-      f: Number(info.f) || Math.max(1, Math.round(fps * 5)),
+      f: Number(info.f) || fps,
       w,
       h,
       videoW,

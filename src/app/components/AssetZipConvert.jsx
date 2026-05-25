@@ -4,6 +4,8 @@ import { useEffect, useMemo, useState } from 'react';
 import { Alert, Card, Upload, Button, Select, InputNumber, Space, Tag, message } from 'antd';
 import { InboxOutlined, DownloadOutlined } from '@ant-design/icons';
 import { upload } from '@vercel/blob/client';
+import VapWebglPreview from './home/VapWebglPreview';
+import { parseVapcFromArrayBuffer } from '../lib/vap-mp4-client';
 
 function guessFilenameFromDisposition(disposition, fallback) {
   if (!disposition) return fallback;
@@ -28,6 +30,9 @@ export default function AssetZipConvert() {
   const [pack, setPack] = useState('right');
   const [stage, setStage] = useState('idle'); // idle | uploading | converting
   const [pendingTask, setPendingTask] = useState(null);
+  const [previewUrl, setPreviewUrl] = useState(null);
+  const [previewConfig, setPreviewConfig] = useState(null);
+  const [previewName, setPreviewName] = useState('');
 
   const help = useMemo(() => {
     return (
@@ -61,10 +66,20 @@ export default function AssetZipConvert() {
     return () => window.removeEventListener('beforeunload', onBeforeUnload);
   }, [loading]);
 
+  const clearPreview = () => {
+    if (previewUrl) URL.revokeObjectURL(previewUrl);
+    setPreviewUrl(null);
+    setPreviewConfig(null);
+    setPreviewName('');
+  };
+
+  useEffect(() => () => clearPreview(), []);
+
   const runConvertRequest = async (payload, fallbackFileName) => {
     setStage('converting');
     window.sessionStorage.setItem(PENDING_TASK_KEY, JSON.stringify(payload));
     setPendingTask(payload);
+    clearPreview();
 
     const resp = await fetch('/api/asset-convert', {
       method: 'POST',
@@ -77,17 +92,44 @@ export default function AssetZipConvert() {
     }
 
     const blob = await resp.blob();
+    const buf = await blob.arrayBuffer();
     const dispo = resp.headers.get('content-disposition');
     const fallbackName = `${(fallbackFileName || 'asset').replace(/\.zip$/i, '')}.${payload.format}`;
     const filename = guessFilenameFromDisposition(dispo, fallbackName);
-    const url = URL.createObjectURL(blob);
+
+    let vapcRaw = null;
+    const vapcHeader = resp.headers.get('x-vapc-config');
+    if (vapcHeader) {
+      try {
+        vapcRaw = JSON.parse(atob(vapcHeader));
+      } catch {
+        vapcRaw = null;
+      }
+    }
+    if (payload.format === 'vap' && !vapcRaw) {
+      try {
+        vapcRaw = parseVapcFromArrayBuffer(buf);
+      } catch {
+        vapcRaw = null;
+      }
+    }
+
+    const fileBlob = new Blob([buf], { type: blob.type || 'application/octet-stream' });
+    const downloadUrl = URL.createObjectURL(fileBlob);
     const a = document.createElement('a');
-    a.href = url;
+    a.href = downloadUrl;
     a.download = filename;
     document.body.appendChild(a);
     a.click();
     a.remove();
-    URL.revokeObjectURL(url);
+
+    if (payload.format === 'vap' && vapcRaw) {
+      setPreviewUrl(URL.createObjectURL(fileBlob));
+      setPreviewConfig(vapcRaw);
+      setPreviewName(filename);
+    } else {
+      URL.revokeObjectURL(downloadUrl);
+    }
 
     window.sessionStorage.removeItem(PENDING_TASK_KEY);
     setPendingTask(null);
@@ -217,9 +259,9 @@ export default function AssetZipConvert() {
                 <Select
                   value={pack}
                   onChange={setPack}
-                  style={{ width: 180 }}
+                  style={{ width: 220 }}
                   options={[
-                    { value: 'right', label: '左右拼接（RGB左 + Alpha右）' },
+                    { value: 'right', label: '左右拼接（推荐 · 腾讯 VAP 标准）' },
                     { value: 'bottom', label: '上下拼接（RGB上 + Alpha下）' },
                   ]}
                 />
@@ -236,6 +278,14 @@ export default function AssetZipConvert() {
         <Button type='primary' icon={<DownloadOutlined />} loading={loading} onClick={onConvert}>
           开始转换并下载
         </Button>
+
+        {format === 'vap' && previewUrl && previewConfig ? (
+          <VapWebglPreview
+            srcUrl={previewUrl}
+            vapConfig={previewConfig}
+            label={`转换结果预览 · ${previewName}`}
+          />
+        ) : null}
       </Space>
     </Card>
   );

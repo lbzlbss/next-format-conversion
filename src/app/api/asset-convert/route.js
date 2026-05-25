@@ -10,6 +10,8 @@ import JSZip from 'jszip';
 import sharp from 'sharp';
 
 import { ApiError, LIMITS, assertFile, toErrorResponse, withTimeout } from '../_lib/guard';
+import { buildVapcFromSequence } from '../../lib/vapc-builder.js';
+import { rebuildWithVapc } from '../../lib/vap-mp4.server.js';
 
 const _require = createRequire(import.meta.url);
 export const maxDuration = 300;
@@ -101,7 +103,7 @@ function runFfmpeg(input, output, outputOptions = []) {
   });
 }
 
-function runFfmpegImageSeqToMp4({ pattern, fps, filterComplex, outMp4 }) {
+function runFfmpegImageSeqToMp4({ pattern, fps, filterComplex, outMp4, crf = 18 }) {
   return new Promise((resolve, reject) => {
     let stderr = '';
     const cmd = ffmpeg()
@@ -122,7 +124,7 @@ function runFfmpegImageSeqToMp4({ pattern, fps, filterComplex, outMp4 }) {
         '-preset',
         'veryfast',
         '-crf',
-        '18',
+        String(Math.min(28, Math.max(15, crf))),
         // Make every frame a keyframe (intra-only) to avoid P/B-frame corruption artifacts.
         '-g',
         '1',
@@ -148,47 +150,6 @@ function runFfmpegImageSeqToMp4({ pattern, fps, filterComplex, outMp4 }) {
       .on('error', (err) => reject(new Error(`${err.message}\nffmpeg stderr:\n${stderr}`)))
       .run();
   });
-}
-
-function findBoxRecursive(buf, boxType) {
-  const CONTAINER_BOXES = new Set(['moov', 'trak', 'mdia', 'minf', 'stbl', 'udta', 'meta', 'ilst']);
-  let offset = 0;
-  while (offset + 8 <= buf.length) {
-    let size = buf.readUInt32BE(offset);
-    const type = buf.slice(offset + 4, offset + 8).toString('ascii');
-
-    if (size === 0) size = buf.length - offset;
-    if (size === 1 || size < 8) {
-      offset += Math.max(size, 8);
-      continue;
-    }
-
-    if (type === boxType) {
-      return { start: offset, size, data: buf.slice(offset + 8, offset + size) };
-    }
-
-    if (CONTAINER_BOXES.has(type)) {
-      const inner = findBoxRecursive(buf.slice(offset + 8, offset + size), boxType);
-      if (inner) return { ...inner, start: inner.start + offset + 8 };
-    }
-
-    offset += size;
-  }
-  return null;
-}
-
-function rebuildWithVapc(buf, config) {
-  const jsonStr = JSON.stringify(config);
-  const jsonBuf = Buffer.from(jsonStr, 'utf8');
-  const boxSize = 8 + jsonBuf.length;
-  const newBox = Buffer.alloc(boxSize);
-  newBox.writeUInt32BE(boxSize, 0);
-  newBox.write('vapc', 4, 'ascii');
-  jsonBuf.copy(newBox, 8);
-
-  const box = findBoxRecursive(buf, 'vapc');
-  if (!box) return Buffer.concat([buf, newBox]);
-  return Buffer.concat([buf.slice(0, box.start), newBox, buf.slice(box.start + box.size)]);
 }
 
 async function buildSvgaFromPngBuffers(pngBuffers, { fps, width, height }) {
@@ -249,6 +210,7 @@ function parseInputPayload(contentType, formData, jsonBody) {
       fps: parsePositiveInt(jsonBody?.fps) ?? 30,
       fit: String(jsonBody?.fit || 'contain').toLowerCase(),
       pack: String(jsonBody?.pack || 'right').toLowerCase(),
+      crf: parsePositiveInt(jsonBody?.crf) ?? 18,
       reqW: parsePositiveInt(jsonBody?.width),
       reqH: parsePositiveInt(jsonBody?.height),
       stem: String(jsonBody?.filename || 'asset').replace(/\.(zip|svga|vap)$/i, ''),
@@ -262,6 +224,7 @@ function parseInputPayload(contentType, formData, jsonBody) {
     fps: parsePositiveInt(formData?.get('fps')) ?? 30,
     fit: String(formData?.get('fit') || 'contain').toLowerCase(),
     pack: String(formData?.get('pack') || 'right').toLowerCase(),
+    crf: parsePositiveInt(formData?.get('crf')) ?? 18,
     reqW: parsePositiveInt(formData?.get('width')),
     reqH: parsePositiveInt(formData?.get('height')),
     stem: String(formData?.get('filename') || 'asset').replace(/\.(zip|svga|vap)$/i, ''),
@@ -287,7 +250,7 @@ export async function POST(request) {
         const jsonBody = isJson ? await request.json() : null;
         const formData = isJson ? null : await request.formData();
 
-        const { file, blobUrl, outFormat, fps, fit, pack, reqW, reqH, stem } = parseInputPayload(
+        const { file, blobUrl, outFormat, fps, fit, pack, crf, reqW, reqH, stem } = parseInputPayload(
           contentType,
           formData,
           jsonBody
@@ -453,28 +416,26 @@ export async function POST(request) {
             '[c0]format=rgb24[c];' +
             (pack === 'bottom' ? '[c][a]vstack=inputs=2[v]' : '[c][a]hstack=inputs=2[v]');
 
-          await runFfmpegImageSeqToMp4({ pattern, fps, filterComplex, outMp4 });
+          await runFfmpegImageSeqToMp4({ pattern, fps, filterComplex, outMp4, crf });
 
           const mp4Buf = await fsp.readFile(outMp4);
-          const vapc = {
-            v: 2,
-            // display size
-            w: encW,
-            h: encH,
-            // encoded video size (padded)
-            videoW: pack === 'bottom' ? padW : padW * 2,
-            videoH: pack === 'bottom' ? padH * 2 : padH,
+          const vapc = buildVapcFromSequence({
+            encW,
+            encH,
+            padW,
+            padH,
             fps,
-            // Compatible with our frontend (rgbFrame/aFrame arrays)
-            rgbFrame: [0, 0, encW, encH],
-            aFrame: pack === 'bottom' ? [0, padH, encW, encH] : [padW, 0, encW, encH],
-          };
+            frameCount: frames.length,
+            pack,
+          });
           const vapBuf = rebuildWithVapc(mp4Buf, vapc);
+          const vapcB64 = Buffer.from(JSON.stringify(vapc), 'utf8').toString('base64');
 
           return new NextResponse(vapBuf, {
             headers: {
               'Content-Type': 'application/octet-stream',
               'Content-Disposition': `attachment; filename="${encodeURIComponent(`${outStem}_${encW}x${encH}_${fps}.vap`)}"`,
+              'X-Vapc-Config': vapcB64,
             },
           });
         } finally {

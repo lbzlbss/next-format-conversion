@@ -11,6 +11,8 @@ import ffmpeg from 'fluent-ffmpeg';
 import sharp from 'sharp';
 import JSZip from 'jszip';
 import protobuf from 'protobufjs';
+import { buildVapcFromSvgaLayout } from '../../lib/vapc-builder.js';
+import { parseVapc, rebuildWithVapc } from '../../lib/vap-mp4.server.js';
 
 // CJS require helper — needed for packages that don't ship ESM (e.g. ffmpeg-static)
 const _require = createRequire(import.meta.url);
@@ -112,40 +114,6 @@ function findBoxRecursive(buf, boxType) {
     offset += size;
   }
   return null;
-}
-
-function parseVapc(buf) {
-  const box = findBoxRecursive(buf, 'vapc');
-  if (!box) return null;
-  try {
-    return JSON.parse(box.data.toString('utf8'));
-  } catch {
-    return null;
-  }
-}
-
-/**
- * Replace the vapc box in buf with a new JSON config.
- * If no vapc box exists, append a new one before the end.
- */
-function rebuildWithVapc(buf, config) {
-  const jsonStr = JSON.stringify(config);
-  const jsonBuf = Buffer.from(jsonStr, 'utf8');
-  const boxSize = 8 + jsonBuf.length;
-  const newBox = Buffer.alloc(boxSize);
-  newBox.writeUInt32BE(boxSize, 0);
-  newBox.write('vapc', 4, 'ascii');
-  jsonBuf.copy(newBox, 8);
-
-  const box = findBoxRecursive(buf, 'vapc');
-  if (!box) {
-    return Buffer.concat([buf, newBox]);
-  }
-  return Buffer.concat([
-    buf.slice(0, box.start),
-    newBox,
-    buf.slice(box.start + box.size),
-  ]);
 }
 
 // ─── ffmpeg helpers ────────────────────────────────────────────────────────────
@@ -534,22 +502,12 @@ async function buildVapFromSvga(svgaBuffer, options = {}) {
 
   let outBuf = await fsp.readFile(outputPath);
 
-  // Build vapc config
-  const vapc = {
-    info: {
-      f:       outFps,
-      w:       displayW,
-      h:       displayH,
-      videoW,
-      videoH,
-      orien:   0,
-      alpha:   1,
-      isAlignBothEnds: 0,
-      rgbLayout:   { x: 0,        y: 0, w: displayW, h: displayH },
-      aLayout:     { x: displayW, y: 0, w: displayW, h: displayH },
-      sources: [],
-    },
-  };
+  const vapc = buildVapcFromSvgaLayout({
+    displayW,
+    displayH,
+    fps: outFps,
+    frameCount,
+  });
   outBuf = rebuildWithVapc(outBuf, vapc);
 
   // Cleanup

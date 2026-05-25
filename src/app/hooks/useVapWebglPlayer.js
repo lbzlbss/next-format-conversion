@@ -76,9 +76,9 @@ export function useVapWebglPlayer() {
           fps: info.fps,
           mute: true,
           loop: true,
-          type: 0,
+          type: 2,
           accurate: true,
-          precache: false,
+          precache: true,
           onLoadError: (e) => {
             setLoadError(e?.message || 'VAP 资源加载失败');
             setCanPlay(false);
