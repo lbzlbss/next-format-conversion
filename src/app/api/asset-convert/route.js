@@ -13,6 +13,7 @@ import { ApiError, LIMITS, assertFile, assertMaxFrames, toErrorResponse, withTim
 import { deleteAssetBlobQuietly, purgeAssetBlobs } from '../../lib/blob-cleanup.server.js';
 import { downloadBlobZipBuffer } from '../../lib/blob-download.server.js';
 import { validateZipBuffer } from '../../lib/zip-extract.server.js';
+import { unsupportedFrameUserMessage } from '../../lib/image-sniff.js';
 import { extractZipImageFrames } from '../../lib/zip-extract.server.js';
 import { buildVapcFromSequence } from '../../lib/vapc-builder.js';
 import { rebuildWithVapc } from '../../lib/vap-mp4.server.js';
@@ -304,11 +305,27 @@ export async function POST(request) {
           assertMaxFrames(frames.length);
 
           const firstBuf = await frames[0].readBuffer();
-          const meta = await sharp(firstBuf, { failOn: 'none' }).metadata();
+          let meta;
+          try {
+            meta = await sharp(firstBuf, { failOn: 'none' }).metadata();
+          } catch (e) {
+            const msg = String(e?.message || e);
+            if (/unsupported image|input buffer/i.test(msg)) {
+              throw new ApiError('INVALID_FORMAT', unsupportedFrameUserMessage(frames[0].name), 400, {
+                frame: frames[0].name,
+              });
+            }
+            throw e;
+          }
           const origW = meta.width ?? null;
           const origH = meta.height ?? null;
           if (!origW || !origH) {
-            throw new ApiError('INVALID_FORMAT', '无法读取首帧图片尺寸', 400);
+            throw new ApiError(
+              'INVALID_FORMAT',
+              `无法读取首帧「${frames[0].name}」尺寸，请确认是有效 PNG/JPEG/WebP/GIF`,
+              400,
+              { frame: frames[0].name },
+            );
           }
 
           const targetW = reqW ?? origW;
@@ -321,22 +338,34 @@ export async function POST(request) {
           const resizeOpt = fitToSharp(fit);
 
           for (let i = 0; i < frames.length; i++) {
+            const frameName = frames[i].name;
             const buf = await frames[i].readBuffer();
-            const base = sharp(buf, { failOn: 'none' })
-              .ensureAlpha()
-              .resize(encW, encH, {
-                ...resizeOpt,
-                background: { r: 0, g: 0, b: 0, alpha: 0 },
-              })
-              // Pad to 16-aligned for H.264 macroblocks; keep transparent padding.
-              .extend({
-                top: 0,
-                left: 0,
-                right: Math.max(0, padW - encW),
-                bottom: Math.max(0, padH - encH),
-                background: { r: 0, g: 0, b: 0, alpha: 0 },
-              });
-            const pngBuf = await base.png().toBuffer();
+            let pngBuf;
+            try {
+              const base = sharp(buf, { failOn: 'none' })
+                .ensureAlpha()
+                .resize(encW, encH, {
+                  ...resizeOpt,
+                  background: { r: 0, g: 0, b: 0, alpha: 0 },
+                })
+                .extend({
+                  top: 0,
+                  left: 0,
+                  right: Math.max(0, padW - encW),
+                  bottom: Math.max(0, padH - encH),
+                  background: { r: 0, g: 0, b: 0, alpha: 0 },
+                });
+              pngBuf = await base.png().toBuffer();
+            } catch (e) {
+              const msg = String(e?.message || e);
+              if (/unsupported image|input buffer/i.test(msg)) {
+                throw new ApiError('INVALID_FORMAT', unsupportedFrameUserMessage(frameName), 400, {
+                  frame: frameName,
+                  frameIndex: i,
+                });
+              }
+              throw e;
+            }
 
             const outPngPath = path.join(framesDir, `${String(i).padStart(3, '0')}.png`);
             await fsp.writeFile(outPngPath, pngBuf);

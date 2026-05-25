@@ -40,6 +40,13 @@ export function toErrorResponse(error) {
       { hint: 'vercel_tmp_limit_mb: 512' },
     );
   }
+  if (/unsupported image format|input buffer contains unsupported/i.test(raw)) {
+    return jsonError(
+      'INVALID_FORMAT',
+      '压缩包内含无法识别的图片。请确认均为 PNG/JPEG/WebP/GIF 序列帧，并删除 macOS 产生的 __MACOSX、._ 附属文件后重新打包。',
+      400,
+    );
+  }
   if (/storage quota exceeded|blob.*quota/i.test(raw)) {
     return jsonError(
       'BLOB_QUOTA_EXCEEDED',

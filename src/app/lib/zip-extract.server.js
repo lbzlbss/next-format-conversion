@@ -4,9 +4,19 @@ import path from 'path';
 import yauzl from 'yauzl';
 
 import { ApiError } from '../api/_lib/guard.js';
+import { isSupportedSequenceFrame, unsupportedFrameUserMessage } from './image-sniff.js';
 import { detectArchiveKind, findZipMagicOffset, invalidZipUserMessage } from './zip-sniff.js';
 
-const SUPPORTED_IMAGE_EXTS = new Set(['.png', '.jpg', '.jpeg', '.webp']);
+const SUPPORTED_IMAGE_EXTS = new Set(['.png', '.jpg', '.jpeg', '.webp', '.gif']);
+
+/** macOS / Windows 压缩包常见垃圾条目 */
+function shouldSkipZipEntry(fileName) {
+  const normalized = String(fileName || '').replace(/\\/g, '/');
+  if (/__MACOSX\//i.test(normalized) || /\/\.DS_Store$/i.test(normalized)) return true;
+  const base = path.basename(normalized);
+  if (base === '.DS_Store' || base === 'Thumbs.db' || base.startsWith('._')) return true;
+  return false;
+}
 
 function naturalKey(s) {
   const parts = String(s).split(/(\d+)/g);
@@ -115,7 +125,7 @@ function listImageEntries(zipfile) {
     const entries = [];
     zipfile.readEntry();
     zipfile.on('entry', (entry) => {
-      if (/\/$/.test(entry.fileName)) {
+      if (/\/$/.test(entry.fileName) || shouldSkipZipEntry(entry.fileName)) {
         zipfile.readEntry();
         return;
       }
@@ -156,12 +166,24 @@ export async function extractZipImageFrames(zipBuffer, _workDir) {
     zipfile = await openZipFromBuffer(sourceBuf);
     const entries = await listImageEntries(zipfile);
     if (entries.length === 0) {
-      throw new ApiError('INVALID_FORMAT', '压缩包中未找到可用图片（png/jpg/jpeg/webp）', 400);
+      throw new ApiError(
+        'INVALID_FORMAT',
+        '压缩包中未找到可用序列帧（png/jpg/jpeg/webp/gif）。若用 macOS 压缩，请删除 __MACOSX 与 ._ 开头文件后重新打包。',
+        400,
+      );
     }
     return {
       frames: entries.map((entry) => ({
         name: entry.fileName,
-        readBuffer: () => readEntryToBuffer(zipfile, entry),
+        readBuffer: async () => {
+          const buf = await readEntryToBuffer(zipfile, entry);
+          if (!isSupportedSequenceFrame(buf)) {
+            throw new ApiError('INVALID_FORMAT', unsupportedFrameUserMessage(entry.fileName), 400, {
+              frame: entry.fileName,
+            });
+          }
+          return buf;
+        },
       })),
       async dispose() {
         await new Promise((resolve) => {

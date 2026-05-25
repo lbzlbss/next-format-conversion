@@ -305,7 +305,7 @@ export default function AssetZipConvert() {
           </p>
           <p className='ant-upload-text'>拖拽或点击上传 ZIP（内含序列帧图片）</p>
           <p className='ant-upload-hint'>
-            请上传<strong>标准 ZIP</strong>（对「序列帧文件夹」右键压缩，勿用 RAR/7z/分卷）。
+            请上传<strong>标准 ZIP</strong>（对「序列帧文件夹」右键压缩，勿含 __MACOSX / ._ 文件，勿用 RAR/7z/分卷）。
             内含 png/jpg/webp，按文件名排序，建议 ≤500 帧。大 ZIP 转换占用云端临时盘（约 512MB），帧数过多可能失败。
             小于 {formatBytes(BLOB_MULTIPART_THRESHOLD_BYTES)} 直传转换不占 Blob；更大文件走 Blob 分片（转换后自动删除）。最大{' '}
             {formatBytes(ASSET_ZIP_MAX_BYTES)}。
