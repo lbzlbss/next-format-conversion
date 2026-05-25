@@ -12,6 +12,14 @@ export function formatBytes(n) {
 }
 
 /** 避免中文/特殊字符 pathname 导致 Blob PUT 异常 */
+/** 浏览器端快速校验 ZIP 魔数 */
+export async function assertLocalZipFile(file) {
+  const head = await file.slice(0, 4).arrayBuffer();
+  const b = new Uint8Array(head);
+  if (b[0] === 0x50 && b[1] === 0x4b) return;
+  throw new Error('所选文件不是有效的 ZIP（缺少 PK 文件头），请用 .zip 重新打包序列帧');
+}
+
 export function safeZipBlobPathname(originalName) {
   const stem = String(originalName || 'asset')
     .replace(/\.zip$/i, '')

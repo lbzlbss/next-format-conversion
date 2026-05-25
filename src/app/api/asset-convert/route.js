@@ -10,6 +10,7 @@ import JSZip from 'jszip';
 import sharp from 'sharp';
 
 import { ApiError, LIMITS, assertFile, assertMaxFrames, toErrorResponse, withTimeout } from '../_lib/guard';
+import { downloadBlobZipBuffer } from '../../lib/blob-download.server.js';
 import { validateZipBuffer } from '../../lib/zip-extract.server.js';
 import { extractZipImageFrames } from '../../lib/zip-extract.server.js';
 import { buildVapcFromSequence } from '../../lib/vapc-builder.js';
@@ -204,13 +205,6 @@ async function fetchWithTimeout(url, timeoutMs = 45000) {
   }
 }
 
-/** 按体积估算 Blob 下载超时（大 ZIP 需更长时间） */
-function blobFetchTimeoutMs(byteLength) {
-  if (!byteLength || byteLength <= 0) return 120_000;
-  const mb = byteLength / (1024 * 1024);
-  return Math.min(600_000, Math.max(120_000, Math.ceil(mb * 3000)));
-}
-
 export async function POST(request) {
   try {
     return await withTimeout(
@@ -241,58 +235,27 @@ export async function POST(request) {
             throw new ApiError('INVALID_FORMAT', 'blobUrl 仅支持 https', 400);
           }
 
-          let remote = null;
-          let remoteBytesHint = 0;
-          try {
-            const head = await fetch(blobUrl, { method: 'HEAD', cache: 'no-store' });
-            if (head.ok) {
-              remoteBytesHint = Number(head.headers.get('content-length') || 0);
-            }
-          } catch {
-            /* HEAD 非必须 */
-          }
-          const fetchTimeout = blobFetchTimeoutMs(remoteBytesHint);
-          try {
-            remote = await fetchWithTimeout(blobUrl, fetchTimeout);
-          } catch (err) {
-            const reason =
-              err?.name === 'AbortError'
-                ? `下载超时（${Math.round(fetchTimeout / 1000)}s）`
-                : err?.cause?.message || err?.message || '未知网络错误';
-            throw new ApiError('BLOB_FETCH_FAILED', `下载 blobUrl 失败: ${reason}`, 502, {
-              host: parsedUrl.host,
-              pathname: parsedUrl.pathname,
-            });
-          }
-          if (!remote.ok) {
-            throw new ApiError('BLOB_FETCH_FAILED', `下载 blobUrl 失败 (${remote.status})`, 502, {
-              host: parsedUrl.host,
-              pathname: parsedUrl.pathname,
-              status: remote.status,
-            });
-          }
-          const remoteBytes = Number(remote.headers.get('content-length') || 0);
-          if (remoteBytes > LIMITS.SVGA_VAP_MAX_BYTES) {
+          if (expectedBytes > LIMITS.SVGA_VAP_MAX_BYTES) {
             throw new ApiError(
               'FILE_TOO_LARGE',
               `压缩包过大，请上传小于 ${(LIMITS.SVGA_VAP_MAX_BYTES / 1024 / 1024).toFixed(0)}MB 的文件`,
               413,
-              { maxBytes: LIMITS.SVGA_VAP_MAX_BYTES, actualBytes: remoteBytes }
+              { maxBytes: LIMITS.SVGA_VAP_MAX_BYTES, actualBytes: expectedBytes },
             );
           }
-          zipBuffer = Buffer.from(await remote.arrayBuffer());
-          if (zipBuffer.length === 0) {
-            throw new ApiError('INVALID_FORMAT', 'blobUrl 文件为空', 400);
-          }
+
+          zipBuffer = await downloadBlobZipBuffer(blobUrl, expectedBytes || null, (url, timeoutMs) =>
+            fetchWithTimeout(url, timeoutMs),
+          );
+
           if (zipBuffer.length > LIMITS.SVGA_VAP_MAX_BYTES) {
             throw new ApiError(
               'FILE_TOO_LARGE',
               `压缩包过大，请上传小于 ${(LIMITS.SVGA_VAP_MAX_BYTES / 1024 / 1024).toFixed(0)}MB 的文件`,
               413,
-              { maxBytes: LIMITS.SVGA_VAP_MAX_BYTES, actualBytes: zipBuffer.length }
+              { maxBytes: LIMITS.SVGA_VAP_MAX_BYTES, actualBytes: zipBuffer.length },
             );
           }
-          validateZipBuffer(zipBuffer, expectedBytes || remoteBytes || null);
           inputName = path.basename(parsedUrl.pathname) || inputName;
         } else {
           assertFile(file, { maxBytes: LIMITS.SVGA_VAP_MAX_BYTES, label: '压缩包' });

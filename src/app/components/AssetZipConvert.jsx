@@ -10,6 +10,7 @@ import {
   ASSET_ZIP_MAX_BYTES,
   BLOB_MULTIPART_THRESHOLD_BYTES,
   formatBytes,
+  assertLocalZipFile,
   safeZipBlobPathname,
 } from '../lib/upload-limits';
 
@@ -153,6 +154,7 @@ export default function AssetZipConvert() {
     }
     setLoading(true);
     try {
+      await assertLocalZipFile(f);
       setStage('uploading');
       const blobPathname = safeZipBlobPathname(f.name);
       const useMultipart = f.size >= BLOB_MULTIPART_THRESHOLD_BYTES;
@@ -170,7 +172,7 @@ export default function AssetZipConvert() {
       });
 
       const payload = {
-        blobUrl: uploaded.url,
+        blobUrl: uploaded.downloadUrl || uploaded.url,
         filename: f.name,
         expectedBytes: f.size,
         format,

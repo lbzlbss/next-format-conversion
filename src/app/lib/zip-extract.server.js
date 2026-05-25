@@ -52,21 +52,38 @@ export function validateZipBuffer(buf, expectedBytes = null) {
     );
   }
 
-  const isPk = buf[0] === 0x50 && buf[1] === 0x4b;
-  if (!isPk) {
-    const head = buf.slice(0, 120).toString('utf8');
-    if (head.trimStart().startsWith('<') || head.includes('<!DOCTYPE')) {
-      throw new ApiError(
-        'BLOB_FETCH_FAILED',
-        '下载内容不是 ZIP（疑似错误页面），请重新上传',
-        502,
-      );
+  let scanBuf = buf;
+  if (!(buf[0] === 0x50 && buf[1] === 0x4b)) {
+    const scanLen = Math.min(buf.length, 65536);
+    let offset = -1;
+    for (let i = 0; i < scanLen - 3; i++) {
+      if (buf[i] !== 0x50 || buf[i + 1] !== 0x4b) continue;
+      const b2 = buf[i + 2];
+      if (b2 === 0x03 || b2 === 0x05 || b2 === 0x07) {
+        offset = i;
+        break;
+      }
     }
-    throw new ApiError('INVALID_FORMAT', '不是有效的 ZIP 文件（缺少 PK 文件头）', 400);
+    if (offset > 0) {
+      scanBuf = buf.subarray(offset);
+    } else {
+      const head = buf.slice(0, 120).toString('utf8');
+      if (head.trimStart().startsWith('<') || head.includes('<!DOCTYPE')) {
+        throw new ApiError(
+          'BLOB_FETCH_FAILED',
+          '下载内容不是 ZIP（疑似错误页面），请重新上传',
+          502,
+        );
+      }
+      throw new ApiError('INVALID_FORMAT', '不是有效的 ZIP 文件（缺少 PK 文件头）', 400, {
+        sniff: buf.subarray(0, 8).toString('hex'),
+      });
+    }
   }
+  const tailSource = scanBuf;
 
-  const tailLen = Math.min(buf.length, 65557);
-  const tail = buf.slice(buf.length - tailLen);
+  const tailLen = Math.min(tailSource.length, 65557);
+  const tail = tailSource.slice(tailSource.length - tailLen);
   let hasEnd = false;
   for (let i = tail.length - 22; i >= 0; i--) {
     if (tail[i] !== 0x50 || tail[i + 1] !== 0x4b) continue;
@@ -145,9 +162,19 @@ function listImageEntries(zipfile) {
  */
 export async function extractZipImageFrames(zipBuffer, workDir) {
   validateZipBuffer(zipBuffer);
+  let sourceBuf = zipBuffer;
+  if (!(zipBuffer[0] === 0x50 && zipBuffer[1] === 0x4b)) {
+    const scanLen = Math.min(zipBuffer.length, 65536);
+    for (let i = 0; i < scanLen - 3; i++) {
+      if (zipBuffer[i] === 0x50 && zipBuffer[i + 1] === 0x4b) {
+        sourceBuf = zipBuffer.subarray(i);
+        break;
+      }
+    }
+  }
 
   const zipPath = path.join(workDir, '_source.zip');
-  await fsp.writeFile(zipPath, zipBuffer);
+  await fsp.writeFile(zipPath, sourceBuf);
 
   let zipfile;
   try {
