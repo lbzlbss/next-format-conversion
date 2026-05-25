@@ -92,9 +92,16 @@ if (action === "merge") {
   });
   if (!verify.ok) fail(`合并前验证未通过，请运行: pnpm agent:verify -- ${runId} --prod https://nextformat.aiblank.top/\n${verify.error?.slice(0, 800)}`);
 
-  tryRunCmd(`git checkout ${defaultBranch}`);
-  tryRunCmd(`git merge --no-ff ${featureBranch} -m "feat(agent): ${state.requirement} (${runId})"`);
-  tryRunCmd(`git tag -a ${tag} -m "release: ${tag} — ${state.requirement}"`);
+  const coMain = tryRunCmd(`git checkout ${defaultBranch}`);
+  if (!coMain.ok) fail(`无法切换到 ${defaultBranch}: ${coMain.error}`);
+
+  const merge = tryRunCmd(
+    `git merge --no-ff ${featureBranch} -m "feat(agent): ${state.requirement} (${runId})"`,
+  );
+  if (!merge.ok) fail(`合并失败: ${merge.error}`);
+
+  const tagRes = tryRunCmd(`git tag -a ${tag} -m "release: ${tag} — ${state.requirement}"`);
+  if (!tagRes.ok) fail(`打 tag 失败: ${tagRes.error}`);
 
   state.phases.git = { status: "completed", mergedAt: new Date().toISOString(), tag };
   state.tag = tag;
