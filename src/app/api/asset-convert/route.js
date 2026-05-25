@@ -241,6 +241,13 @@ async function fetchWithTimeout(url, timeoutMs = 45000) {
   }
 }
 
+/** 按体积估算 Blob 下载超时（大 ZIP 需更长时间） */
+function blobFetchTimeoutMs(byteLength) {
+  if (!byteLength || byteLength <= 0) return 120_000;
+  const mb = byteLength / (1024 * 1024);
+  return Math.min(600_000, Math.max(120_000, Math.ceil(mb * 3000)));
+}
+
 export async function POST(request) {
   try {
     return await withTimeout(
@@ -271,12 +278,22 @@ export async function POST(request) {
           }
 
           let remote = null;
+          let remoteBytesHint = 0;
           try {
-            remote = await fetchWithTimeout(blobUrl, 45000);
+            const head = await fetch(blobUrl, { method: 'HEAD', cache: 'no-store' });
+            if (head.ok) {
+              remoteBytesHint = Number(head.headers.get('content-length') || 0);
+            }
+          } catch {
+            /* HEAD 非必须 */
+          }
+          const fetchTimeout = blobFetchTimeoutMs(remoteBytesHint);
+          try {
+            remote = await fetchWithTimeout(blobUrl, fetchTimeout);
           } catch (err) {
             const reason =
               err?.name === 'AbortError'
-                ? '下载超时（45s）'
+                ? `下载超时（${Math.round(fetchTimeout / 1000)}s）`
                 : err?.cause?.message || err?.message || '未知网络错误';
             throw new ApiError('BLOB_FETCH_FAILED', `下载 blobUrl 失败: ${reason}`, 502, {
               host: parsedUrl.host,

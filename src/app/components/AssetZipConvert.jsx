@@ -6,6 +6,12 @@ import { InboxOutlined, DownloadOutlined } from '@ant-design/icons';
 import { upload } from '@vercel/blob/client';
 import VapWebglPreview from './home/VapWebglPreview';
 import { parseVapcFromArrayBuffer } from '../lib/vap-mp4-client';
+import {
+  ASSET_ZIP_MAX_BYTES,
+  BLOB_MULTIPART_THRESHOLD_BYTES,
+  formatBytes,
+  safeZipBlobPathname,
+} from '../lib/upload-limits';
 
 function guessFilenameFromDisposition(disposition, fallback) {
   if (!disposition) return fallback;
@@ -141,12 +147,26 @@ export default function AssetZipConvert() {
       message.error('请先上传一个 zip 压缩包');
       return;
     }
+    if (f.size > ASSET_ZIP_MAX_BYTES) {
+      message.error(`压缩包不能超过 ${formatBytes(ASSET_ZIP_MAX_BYTES)}（当前 ${formatBytes(f.size)}）`);
+      return;
+    }
     setLoading(true);
     try {
       setStage('uploading');
-      const uploaded = await upload(f.name, f, {
+      const blobPathname = safeZipBlobPathname(f.name);
+      const useMultipart = f.size >= BLOB_MULTIPART_THRESHOLD_BYTES;
+      const uploaded = await upload(blobPathname, f, {
         access: 'public',
         handleUploadUrl: '/api/blob/upload',
+        multipart: useMultipart,
+        contentType: 'application/zip',
+        onUploadProgress: (e) => {
+          if (e.total > 0) {
+            const pct = Math.round((e.loaded / e.total) * 100);
+            setStage(`uploading:${pct}`);
+          }
+        },
       });
 
       const payload = {
@@ -162,7 +182,15 @@ export default function AssetZipConvert() {
       await runConvertRequest(payload, f.name);
       message.success('已生成并开始下载');
     } catch (e) {
-      message.error(e?.message || '转换失败');
+      const errMsg = e?.message || '转换失败';
+      if (/maximumSize|文件过大|413|failed|upload/i.test(errMsg)) {
+        message.error(
+          `上传失败：${errMsg}。大于 ${formatBytes(BLOB_MULTIPART_THRESHOLD_BYTES)} 将自动分片上传；单文件上限 ${formatBytes(ASSET_ZIP_MAX_BYTES)}。`,
+          8,
+        );
+      } else {
+        message.error(errMsg);
+      }
     } finally {
       setStage('idle');
       setLoading(false);
@@ -207,7 +235,13 @@ export default function AssetZipConvert() {
           <Alert
             type='info'
             showIcon
-            title={stage === 'uploading' ? '正在上传到 Blob...' : '正在服务端转换，请勿刷新页面...'}
+            title={
+              stage.startsWith('uploading')
+                ? stage.includes(':')
+                  ? `正在分片上传到 Blob（${stage.split(':')[1]}%）…`
+                  : '正在上传到 Blob…'
+                : '正在服务端转换，请勿刷新页面…'
+            }
           />
         ) : null}
 
@@ -222,7 +256,10 @@ export default function AssetZipConvert() {
             <InboxOutlined />
           </p>
           <p className='ant-upload-text'>拖拽或点击上传 ZIP（内含序列帧图片）</p>
-          <p className='ant-upload-hint'>支持 png / jpg / jpeg / webp。按文件名自然排序作为帧序列。</p>
+          <p className='ant-upload-hint'>
+            支持 png / jpg / jpeg / webp，按文件名自然排序。单文件最大 {formatBytes(ASSET_ZIP_MAX_BYTES)}
+            ，超过 {formatBytes(BLOB_MULTIPART_THRESHOLD_BYTES)} 自动分片直传 Blob。
+          </p>
         </Upload.Dragger>
 
         <Card size='small' title='转换参数'>

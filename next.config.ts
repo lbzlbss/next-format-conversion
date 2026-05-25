@@ -35,9 +35,9 @@ const nextConfig: NextConfig = {
   ],
   experimental: {
     serverActions: {
-      bodySizeLimit: "300mb",
+      bodySizeLimit: "600mb",
     },
-    proxyClientMaxBodySize: "300mb",
+    proxyClientMaxBodySize: "600mb",
   },
   webpack: (config, { dev }) => {
     if (dev) {

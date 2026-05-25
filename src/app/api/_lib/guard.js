@@ -6,7 +6,7 @@ export const DEFAULT_TIMEOUT_MS = IS_PROD ? 20000 : 120000;
 export const LIMITS = {
   IMAGE_MAX_BYTES: 20 * 1024 * 1024,   // 20MB
   VIDEO_MAX_BYTES: 50 * 1024 * 1024,   // 50MB
-  SVGA_VAP_MAX_BYTES: 300 * 1024 * 1024, // 300MB
+  SVGA_VAP_MAX_BYTES: 600 * 1024 * 1024, // 600MB，序列帧 ZIP（与 Blob / proxy 上限一致）
   MAX_FRAMES: 1000,
 };
 
