@@ -350,7 +350,7 @@ export default function AssetZipConvert() {
                   style={{ width: 220 }}
                   options={[
                     { value: 'right', label: '左右拼接（推荐 · 腾讯 VAP 标准）' },
-                    { value: 'right-small', label: '左大右小（行业通用 · RGB 左 2/3 + Alpha 右 1/3）' },
+                    { value: 'right-small', label: '左大右小（右上主 Alpha + 右下融合区）' },
                     { value: 'bottom', label: '上下拼接（RGB上 + Alpha下）' },
                   ]}
                 />

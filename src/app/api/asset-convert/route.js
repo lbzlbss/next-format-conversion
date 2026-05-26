@@ -15,6 +15,7 @@ import { downloadBlobZipBuffer } from '../../lib/blob-download.server.js';
 import { validateZipBuffer } from '../../lib/zip-extract.server.js';
 import { unsupportedFrameUserMessage } from '../../lib/image-sniff.js';
 import { extractZipImageFrames } from '../../lib/zip-extract.server.js';
+import { buildVapPackFilterComplex } from '../../lib/vap-pack.js';
 import { buildVapcFromSequence } from '../../lib/vapc-builder.js';
 import { rebuildWithVapc } from '../../lib/vap-mp4.server.js';
 import { AUDIO_MAX_BYTES } from '../../lib/upload-limits.js';
@@ -472,18 +473,7 @@ export async function POST(request) {
           // vap
           const outMp4 = path.join(tmpDir, 'out.mp4');
           const pattern = path.join(framesDir, '%03d.png');
-          const alphaW = pack === 'right-small' ? toEven(Math.ceil(padW / 2)) : padW;
-          // Make alpha plane 3-channel to avoid colorspace conversions polluting alpha.
-          // pack=right:  [rgb | alpha] (hstack)  => videoW = padW*2, videoH = padH
-          // pack=right-small: [rgb | alpha_small] => videoW = padW + alphaW, videoH = padH
-          // pack=bottom: [rgb / alpha] (vstack)  => videoW = padW,   videoH = padH*2
-          const filterComplex =
-            '[0:v]format=rgba,split=2[c0][c1];' +
-            (pack === 'right-small'
-              ? `[c1]alphaextract,format=gray,scale=${alphaW}:${padH}:flags=bilinear,format=rgb24[a];`
-              : '[c1]alphaextract,format=gray,format=rgb24[a];') +
-            '[c0]format=rgb24[c];' +
-            (pack === 'bottom' ? '[c][a]vstack=inputs=2[v]' : '[c][a]hstack=inputs=2[v]');
+          const filterComplex = buildVapPackFilterComplex({ pack, padW, padH, encH });
 
           if (audioPath) {
             await runFfmpegImageSeqToMp4WithAudio({ pattern, fps, filterComplex, outMp4, crf, audioPath });
@@ -500,7 +490,7 @@ export async function POST(request) {
             fps,
             frameCount: frames.length,
             pack,
-            alphaW: pack === 'right-small' ? alphaW : undefined,
+            alphaW: pack === 'right-small' ? toEven(Math.ceil(padW / 2)) : undefined,
           });
           const vapBuf = rebuildWithVapc(mp4Buf, vapc);
           const vapcB64 = Buffer.from(JSON.stringify(vapc), 'utf8').toString('base64');

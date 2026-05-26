@@ -3,6 +3,8 @@
  * @see https://github.com/Tencent/vap/tree/master/tool
  */
 
+import { toEven } from './vap-pack.js';
+
 /**
  * @param {{
  *   w: number,
@@ -14,6 +16,7 @@
  *   pack?: 'right' | 'bottom' | 'right-small',
  *   alphaW?: number,
  *   aFrameX?: number,
+ *   aFrameH?: number,
  * }} opts
  */
 export function buildVapcPayload(opts) {
@@ -26,14 +29,17 @@ export function buildVapcPayload(opts) {
   const frameCount = Math.max(1, Math.floor(opts.frameCount ?? fps));
 
   const rgbFrame = [0, 0, w, h];
-  /** 左右等宽：Alpha 在 x=w；左大右小：Alpha 在视频坐标 x=aFrameX，宽度 alphaW */
   const alphaW = Math.max(1, Math.floor(opts.alphaW ?? w));
   const aFrameX = Math.max(0, Math.floor(opts.aFrameX ?? w));
+  const aFrameH = Math.max(1, Math.floor(opts.aFrameH ?? h));
+  /**
+   * 左大右小：主透明通道在右上角 aFrame=[padW,0,alphaW,h/2]；右下角为融合/遮罩预留（视频黑底，不在 aFrame 内）
+   */
   const aFrame =
     pack === 'bottom'
       ? [0, h, w, h]
       : pack === 'right-small'
-        ? [aFrameX, 0, alphaW, h]
+        ? [aFrameX, 0, alphaW, aFrameH]
         : [w, 0, alphaW, h];
   const alphaScale = pack === 'right-small' ? Number((alphaW / w).toFixed(4)) : 1;
 
@@ -63,8 +69,25 @@ export function buildVapcPayload(opts) {
  */
 export function buildVapcFromSequence(p) {
   const { encW, encH, padW, padH, fps, frameCount, pack = 'right', alphaW } = p;
-  const alphaPlaneW = pack === 'right-small' ? Math.max(1, Math.floor(alphaW ?? Math.ceil(padW / 2))) : padW;
-  const videoW = pack === 'bottom' ? padW : pack === 'right-small' ? padW + alphaPlaneW : padW * 2;
+
+  if (pack === 'right-small') {
+    const alphaPlaneW = Math.max(1, Math.floor(alphaW ?? Math.ceil(padW / 2)));
+    const aFrameH = toEven(Math.floor(encH / 2));
+    return buildVapcPayload({
+      w: encW,
+      h: encH,
+      videoW: padW + alphaPlaneW,
+      videoH: padH,
+      fps,
+      frameCount,
+      pack,
+      alphaW: alphaPlaneW,
+      aFrameX: padW,
+      aFrameH,
+    });
+  }
+
+  const videoW = pack === 'bottom' ? padW : padW * 2;
   const videoH = pack === 'bottom' ? padH * 2 : padH;
   return buildVapcPayload({
     w: encW,
@@ -74,8 +97,9 @@ export function buildVapcFromSequence(p) {
     fps,
     frameCount,
     pack,
-    alphaW: pack === 'right-small' ? alphaPlaneW : padW,
-    aFrameX: pack === 'right-small' ? padW : encW,
+    alphaW: padW,
+    aFrameX: encW,
+    aFrameH: encH,
   });
 }
 
