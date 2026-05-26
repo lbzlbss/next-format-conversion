@@ -5,7 +5,7 @@ import { resolveRightSmallLayout } from './vap-pack.js';
 export const VERCEL_TMP_BUDGET_BYTES = 480 * 1024 * 1024;
 
 /** 与 route maxDuration / vercel.json 对齐（留 20s 余量） */
-export const CONVERT_DURATION_BUDGET_MS = 780_000;
+export const CONVERT_DURATION_BUDGET_MS = 280_000;
 
 /** 编码结果主要进内存时的软上限（Hobby 函数约 1GB） */
 export const VAP_MEMORY_BUDGET_BYTES = 820 * 1024 * 1024;

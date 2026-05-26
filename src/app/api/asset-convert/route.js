@@ -30,7 +30,7 @@ import { buildVapcFromSequence } from '../../lib/vapc-builder.js';
 import { rebuildWithVapc } from '../../lib/vap-mp4.server.js';
 import { AUDIO_MAX_BYTES } from '../../lib/upload-limits.js';
 
-export const maxDuration = 800;
+export const maxDuration = 300;
 
 function parsePositiveInt(v) {
   if (v == null || v === '') return null;
@@ -432,7 +432,7 @@ export async function POST(request) {
           }
         }
       })(),
-      780_000
+      280_000
     );
   } catch (e) {
     return toErrorResponse(e);
