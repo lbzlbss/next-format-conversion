@@ -45,6 +45,7 @@ export function VapProvider({ children }) {
   const [vapFile,    setVapFile]    = useState(null);   // File object
   const [vapUrl,     setVapUrl]     = useState(null);   // object URL
   const [vapConfig,  setVapConfig]  = useState(null);   // parsed vapc
+  const [vapLayout,  setVapLayout]  = useState(null);   // pack / rgbFrame / aFrame
   const [loadingInfo, setLoadingInfo] = useState(false);
   const [processing, setProcessing] = useState(false);
   const [action,  setAction]  = useState('resize');     // resize | vap-to-svga
@@ -70,6 +71,7 @@ export function VapProvider({ children }) {
     setVapFile(file);
     setVapUrl(url);
     setVapConfig(null);
+    setVapLayout(null);
 
     // Fetch vapc info
     setLoadingInfo(true);
@@ -78,6 +80,7 @@ export function VapProvider({ children }) {
       const json = await res.json();
       if (json.config) {
         setVapConfig(json.config);
+        setVapLayout(json.layout ?? null);
       } else {
         message.warning(json.error || '无法解析 vapc 配置，WebGL 合成预览需要 vapc box');
       }
@@ -151,7 +154,7 @@ export function VapProvider({ children }) {
 
   const value = useMemo(() => ({
     player,
-    vapFile, vapUrl, vapConfig,
+    vapFile, vapUrl, vapConfig, vapLayout,
     loadingInfo, processing,
     action, setAction,
     scaleX, setScaleX,
@@ -166,7 +169,7 @@ export function VapProvider({ children }) {
     handleFile, handleExport, handleSvgaToVap,
   }), [
     player,
-    vapFile, vapUrl, vapConfig,
+    vapFile, vapUrl, vapConfig, vapLayout,
     loadingInfo, processing,
     action,
     scaleX, scaleY, lockScale,
@@ -337,9 +340,15 @@ export function VapMain() {
 }
 
 // ─── VapEditPanel ──────────────────────────────────────────────────────────────
+const PACK_LABELS = {
+  right: '左右分轨（标准）',
+  'right-small': '左大右小（右上 Alpha）',
+  bottom: '上下分轨',
+};
+
 export function VapEditPanel() {
   const {
-    vapFile, vapConfig, processing,
+    vapFile, vapConfig, vapLayout, processing,
     action, setAction,
     scaleX, setScaleX,
     scaleY, setScaleY,
@@ -378,15 +387,22 @@ export function VapEditPanel() {
           <Descriptions.Item label="视频尺寸">{info.videoW} × {info.videoH}</Descriptions.Item>
           <Descriptions.Item label="帧率">{info.f} fps</Descriptions.Item>
           <Descriptions.Item label="透明通道">{info.alpha ? '有' : '无'}</Descriptions.Item>
+          <Descriptions.Item label="拼版">
+            {PACK_LABELS[vapLayout?.pack] ?? vapLayout?.pack ?? '—'}
+          </Descriptions.Item>
           <Descriptions.Item label="方向">{info.orien ?? 0}</Descriptions.Item>
-          {info.rgbLayout && (
-            <Descriptions.Item label="RGB 区域">
-              {`(${info.rgbLayout.x},${info.rgbLayout.y}) ${info.rgbLayout.w}×${info.rgbLayout.h}`}
+          {(vapLayout?.rgbFrame || info.rgbFrame || info.rgbLayout) && (
+            <Descriptions.Item label="rgbFrame">
+              {JSON.stringify(vapLayout?.rgbFrame ?? info.rgbFrame ?? [
+                info.rgbLayout?.x, info.rgbLayout?.y, info.rgbLayout?.w, info.rgbLayout?.h,
+              ])}
             </Descriptions.Item>
           )}
-          {info.aLayout && (
-            <Descriptions.Item label="Alpha 区域">
-              {`(${info.aLayout.x},${info.aLayout.y}) ${info.aLayout.w}×${info.aLayout.h}`}
+          {(vapLayout?.aFrame || info.aFrame || info.aLayout) && (
+            <Descriptions.Item label="aFrame">
+              {JSON.stringify(vapLayout?.aFrame ?? info.aFrame ?? [
+                info.aLayout?.x, info.aLayout?.y, info.aLayout?.w, info.aLayout?.h,
+              ])}
             </Descriptions.Item>
           )}
           {info.sources?.length > 0 && (
@@ -472,6 +488,11 @@ export function VapEditPanel() {
                   type="info"
                   showIcon
                   message={`输出尺寸: ${previewW} × ${previewH}`}
+                  description={
+                    vapLayout?.pack
+                      ? `保持 ${PACK_LABELS[vapLayout.pack] ?? vapLayout.pack} 拼版，仅缩放 RGB/Alpha 区域后重组`
+                      : '按 vapc 拼版区域缩放后重组，不会整帧拉伸'
+                  }
                 />
               )}
             </>

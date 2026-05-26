@@ -16,6 +16,10 @@ import { downloadBlobBuffer } from '../../lib/blob-download.server.js';
 import { VAP_TOOL_MAX_BYTES } from '../../lib/upload-limits.js';
 import { buildVapcFromSvgaLayout } from '../../lib/vapc-builder.js';
 import { parseVapc, rebuildWithVapc } from '../../lib/vap-mp4.server.js';
+import {
+  buildVapResizePlan,
+  getVapLayoutContext,
+} from '../../lib/vap-resize.server.js';
 
 // CJS require helper — needed for packages that don't ship ESM (e.g. ffmpeg-static)
 const _require = createRequire(import.meta.url);
@@ -520,31 +524,8 @@ async function buildVapFromSvga(svgaBuffer, options = {}) {
   return outBuf;
 }
 
-// ─── Scale config helper ───────────────────────────────────────────────────────
 // Force a value to be even (required by libx264)
 const toEven = (v) => Math.round(v / 2) * 2;
-
-function scaleVapConfig(config, scaleX, scaleY) {
-  const info = config.info;
-  const sc     = (v, isX) => Math.round(v * (isX ? scaleX : scaleY));
-  // videoW/H must be even for H.264 encoding
-  const scEven = (v, isX) => toEven(sc(v, isX));
-  const scaleLayout = (l) =>
-    l ? { x: sc(l.x, true), y: sc(l.y, false), w: sc(l.w, true), h: sc(l.h, false) } : l;
-
-  return {
-    ...config,
-    info: {
-      ...info,
-      w:      sc(info.w, true),
-      h:      sc(info.h, false),
-      videoW: scEven(info.videoW, true),
-      videoH: scEven(info.videoH, false),
-      rgbLayout: scaleLayout(info.rgbLayout),
-      aLayout:   scaleLayout(info.aLayout),
-    },
-  };
-}
 
 async function fetchWithTimeout(url, timeoutMs = 120_000) {
   const controller = new AbortController();
@@ -671,7 +652,15 @@ export async function POST(request) {
           { status: 400 }
         );
       }
-      return NextResponse.json({ config });
+      const layout = getVapLayoutContext(config.info || config);
+      return NextResponse.json({
+        config,
+        layout: {
+          pack: layout.pack,
+          rgbFrame: [layout.rgb.x, layout.rgb.y, layout.rgb.w, layout.rgb.h],
+          aFrame: [layout.alpha.x, layout.alpha.y, layout.alpha.w, layout.alpha.h],
+        },
+      });
     }
 
     // ── resize ──────────────────────────────────────────────────────────────
@@ -681,9 +670,19 @@ export async function POST(request) {
         return NextResponse.json({ error: '无法解析 vapc 配置' }, { status: 400 });
       }
 
-      const { scaleX = 1, scaleY = 1 } = options;
-      const newConfig = scaleVapConfig(config, scaleX, scaleY);
-      const { videoW: newVW, videoH: newVH } = newConfig.info;
+      const scaleX = Number(options.scaleX) || 1;
+      const scaleY = Number(options.scaleY) || 1;
+      const targetW = Number(options.targetW) || 0;
+      const targetH = Number(options.targetH) || 0;
+
+      if (scaleX <= 0 || scaleY <= 0) {
+        return NextResponse.json({ error: '缩放比例须大于 0' }, { status: 400 });
+      }
+
+      const { newConfig, filterComplex } = buildVapResizePlan(config, scaleX, scaleY, {
+        targetW: targetW > 0 ? targetW : undefined,
+        targetH: targetH > 0 ? targetH : undefined,
+      });
 
       const inputPath = path.join(TMP, `vap_in_${randomUUID()}.mp4`);
       const outputPath = path.join(TMP, `vap_out_${randomUUID()}.mp4`);
@@ -691,18 +690,28 @@ export async function POST(request) {
 
       await fsp.writeFile(inputPath, fileBuffer);
 
-      // Ensure even dimensions (libx264 requirement) — scaleVapConfig already does this,
-      // but apply toEven again as a safety net.
-      const safeVW = toEven(newVW);
-      const safeVH = toEven(newVH);
-
       await runFfmpeg(inputPath, outputPath, [
-        `-vf scale=${safeVW}:${safeVH}:flags=lanczos,format=yuv420p`,
-        '-c:v libx264',
-        '-crf 18',
-        '-preset fast',
-        '-an',
-        '-movflags +faststart',
+        '-filter_complex',
+        filterComplex,
+        '-map',
+        '[v]',
+        '-map',
+        '0:a?',
+        '-c:v',
+        'libx264',
+        '-crf',
+        '18',
+        '-preset',
+        'fast',
+        '-pix_fmt',
+        'yuv420p',
+        '-c:a',
+        'aac',
+        '-b:a',
+        '128k',
+        '-movflags',
+        '+faststart',
+        '-shortest',
       ]);
 
       let outBuf = await fsp.readFile(outputPath);
