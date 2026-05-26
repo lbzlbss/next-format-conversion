@@ -14,6 +14,7 @@ export const BLOB_MULTIPART_THRESHOLD_BYTES = 100 * 1024 * 1024;
 
 /** VAP / SVGA 工具经 Blob 临时上传上限 */
 export const VAP_TOOL_MAX_BYTES = 200 * 1024 * 1024;
+export const AUDIO_MAX_BYTES = 50 * 1024 * 1024;
 
 const LOCAL_SNIFF_BYTES = 262144;
 
@@ -65,4 +66,12 @@ export function safeSvgaBlobPathname(originalName) {
     .replace(/[^\w.-]+/g, '_')
     .slice(0, 48);
   return `asset-svga/${Date.now()}-${stem || 'anim'}.svga`;
+}
+
+export function safeAudioBlobPathname(originalName) {
+  const stem = String(originalName || 'audio')
+    .replace(/\.(mp3|m4a|aac|wav|ogg)$/i, '')
+    .replace(/[^\w.-]+/g, '_')
+    .slice(0, 48);
+  return `asset-audio/${Date.now()}-${stem || 'audio'}.bin`;
 }

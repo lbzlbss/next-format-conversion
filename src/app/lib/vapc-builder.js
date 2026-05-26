@@ -11,7 +11,8 @@
  *   videoH: number,
  *   fps: number,
  *   frameCount?: number,
- *   pack?: 'right' | 'bottom',
+ *   pack?: 'right' | 'bottom' | 'right-small',
+ *   alphaW?: number,
  * }} opts
  */
 export function buildVapcPayload(opts) {
@@ -20,12 +21,13 @@ export function buildVapcPayload(opts) {
   const videoW = Math.max(1, Math.floor(opts.videoW));
   const videoH = Math.max(1, Math.floor(opts.videoH));
   const fps = Math.max(1, Math.min(60, Math.floor(opts.fps)));
-  const pack = opts.pack === 'bottom' ? 'bottom' : 'right';
+  const pack = opts.pack === 'bottom' ? 'bottom' : opts.pack === 'right-small' ? 'right-small' : 'right';
   const frameCount = Math.max(1, Math.floor(opts.frameCount ?? fps));
 
   const rgbFrame = [0, 0, w, h];
   /** 左右拼接：Alpha 紧贴 RGB 右侧（x=w），与腾讯 VapTool 一致 */
-  const aFrame = pack === 'bottom' ? [0, h, w, h] : [w, 0, w, h];
+  const alphaW = Math.max(1, Math.floor(opts.alphaW ?? w));
+  const aFrame = pack === 'bottom' ? [0, h, w, h] : [w, 0, alphaW, h];
 
   return {
     info: {
@@ -49,11 +51,12 @@ export function buildVapcPayload(opts) {
 
 /**
  * 序列帧 → VAP 编码尺寸（含 16 对齐 padding）
- * @param {{ encW: number, encH: number, padW: number, padH: number, fps: number, frameCount: number, pack?: 'right'|'bottom' }} p
+ * @param {{ encW: number, encH: number, padW: number, padH: number, fps: number, frameCount: number, pack?: 'right'|'bottom'|'right-small', alphaW?: number }} p
  */
 export function buildVapcFromSequence(p) {
-  const { encW, encH, padW, padH, fps, frameCount, pack = 'right' } = p;
-  const videoW = pack === 'bottom' ? padW : padW * 2;
+  const { encW, encH, padW, padH, fps, frameCount, pack = 'right', alphaW } = p;
+  const alphaPlaneW = pack === 'right-small' ? Math.max(1, Math.floor(alphaW ?? Math.ceil(padW / 2))) : padW;
+  const videoW = pack === 'bottom' ? padW : pack === 'right-small' ? padW + alphaPlaneW : padW * 2;
   const videoH = pack === 'bottom' ? padH * 2 : padH;
   return buildVapcPayload({
     w: encW,
@@ -63,6 +66,7 @@ export function buildVapcFromSequence(p) {
     fps,
     frameCount,
     pack,
+    alphaW: pack === 'right-small' ? alphaPlaneW : undefined,
   });
 }
 

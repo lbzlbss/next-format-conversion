@@ -12,11 +12,13 @@ import sharp from 'sharp';
 import { ApiError, LIMITS, assertFile, assertMaxFrames, toErrorResponse, withTimeout } from '../_lib/guard';
 import { deleteAssetBlobQuietly, purgeAssetBlobs } from '../../lib/blob-cleanup.server.js';
 import { downloadBlobZipBuffer } from '../../lib/blob-download.server.js';
+import { downloadBlobBuffer } from '../../lib/blob-download.server.js';
 import { validateZipBuffer } from '../../lib/zip-extract.server.js';
 import { unsupportedFrameUserMessage } from '../../lib/image-sniff.js';
 import { extractZipImageFrames } from '../../lib/zip-extract.server.js';
 import { buildVapcFromSequence } from '../../lib/vapc-builder.js';
 import { rebuildWithVapc } from '../../lib/vap-mp4.server.js';
+import { AUDIO_MAX_BYTES } from '../../lib/upload-limits.js';
 
 const _require = createRequire(import.meta.url);
 export const maxDuration = 300;
@@ -114,6 +116,60 @@ function runFfmpegImageSeqToMp4({ pattern, fps, filterComplex, outMp4, crf = 18 
         '0',
         '-pix_fmt',
         'yuv420p',
+        '-an',
+        '-movflags',
+        '+faststart',
+      ])
+      .output(outMp4);
+
+    cmd
+      .on('stderr', (line) => {
+        stderr += line + '\n';
+      })
+      .on('end', resolve)
+      .on('error', (err) => reject(new Error(`${err.message}\nffmpeg stderr:\n${stderr}`)))
+      .run();
+  });
+}
+
+function runFfmpegImageSeqToMp4WithAudio({ pattern, fps, filterComplex, outMp4, crf = 18, audioPath }) {
+  return new Promise((resolve, reject) => {
+    let stderr = '';
+    const cmd = ffmpeg()
+      .input(pattern)
+      .inputOptions(['-framerate', String(fps), '-start_number', '0'])
+      .input(audioPath)
+      .outputOptions([
+        '-y',
+        '-filter_complex',
+        filterComplex,
+        '-map',
+        '[v]',
+        '-map',
+        '1:a:0?',
+        '-shortest',
+        '-f',
+        'mp4',
+        '-c:v',
+        'libx264',
+        '-preset',
+        'veryfast',
+        '-crf',
+        String(Math.min(28, Math.max(15, crf))),
+        '-g',
+        '1',
+        '-keyint_min',
+        '1',
+        '-sc_threshold',
+        '0',
+        '-bf',
+        '0',
+        '-pix_fmt',
+        'yuv420p',
+        '-c:a',
+        'aac',
+        '-b:a',
+        '128k',
         '-movflags',
         '+faststart',
       ])
@@ -171,6 +227,10 @@ function parseInputPayload(contentType, formData, jsonBody) {
     return {
       file: null,
       blobUrl: String(jsonBody?.blobUrl || '').trim(),
+      audioFile: null,
+      audioUrl: String(jsonBody?.audioUrl || '').trim(),
+      audioExpectedBytes: parsePositiveInt(jsonBody?.audioExpectedBytes),
+      audioName: String(jsonBody?.audioName || ''),
       outFormat: String(jsonBody?.format || 'vap').toLowerCase(),
       fps: parsePositiveInt(jsonBody?.fps) ?? 30,
       fit: String(jsonBody?.fit || 'contain').toLowerCase(),
@@ -186,6 +246,10 @@ function parseInputPayload(contentType, formData, jsonBody) {
   return {
     file: formData?.get('file'),
     blobUrl: String(formData?.get('blobUrl') || '').trim(),
+    audioFile: formData?.get('audio'),
+    audioUrl: String(formData?.get('audioUrl') || '').trim(),
+    audioExpectedBytes: parsePositiveInt(formData?.get('audioExpectedBytes')),
+    audioName: String(formData?.get('audioName') || ''),
     outFormat: String(formData?.get('format') || 'vap').toLowerCase(),
     fps: parsePositiveInt(formData?.get('fps')) ?? 30,
     fit: String(formData?.get('fit') || 'contain').toLowerCase(),
@@ -217,7 +281,22 @@ export async function POST(request) {
         const jsonBody = isJson ? await request.json() : null;
         const formData = isJson ? null : await request.formData();
 
-        const { file, blobUrl, outFormat, fps, fit, pack, crf, reqW, reqH, stem, expectedBytes } =
+        const {
+          file,
+          blobUrl,
+          audioFile,
+          audioUrl,
+          audioExpectedBytes,
+          outFormat,
+          fps,
+          fit,
+          pack,
+          crf,
+          reqW,
+          reqH,
+          stem,
+          expectedBytes,
+        } =
           parseInputPayload(
           contentType,
           formData,
@@ -291,12 +370,13 @@ export async function POST(request) {
         if (fps < 1 || fps > 60) {
           throw new ApiError('INVALID_FORMAT', 'fps 需在 1~60 之间', 400);
         }
-        if (!['right', 'bottom'].includes(pack)) {
-          throw new ApiError('INVALID_FORMAT', 'pack 仅支持 right | bottom', 400);
+        if (!['right', 'right-small', 'bottom'].includes(pack)) {
+          throw new ApiError('INVALID_FORMAT', 'pack 仅支持 right | right-small | bottom', 400);
         }
         const tmpDir = await fsp.mkdtemp(path.join(os.tmpdir(), `asset_zip_${randomUUID()}_`));
         const framesDir = path.join(tmpDir, 'frames');
         await fsp.mkdir(framesDir, { recursive: true });
+        let audioPath = null;
 
         let zipSession = null;
         try {
@@ -371,6 +451,27 @@ export async function POST(request) {
             await fsp.writeFile(outPngPath, pngBuf);
           }
 
+          // optional audio
+          if (audioUrl) {
+            if ((audioExpectedBytes || 0) > AUDIO_MAX_BYTES) {
+              throw new ApiError('FILE_TOO_LARGE', `音频过大，上限 ${(AUDIO_MAX_BYTES / 1024 / 1024).toFixed(0)}MB`, 413);
+            }
+            const buf = await downloadBlobBuffer(audioUrl, audioExpectedBytes || null, (url, timeoutMs) =>
+              fetchWithTimeout(url, timeoutMs),
+            );
+            if (buf.length > AUDIO_MAX_BYTES) {
+              throw new ApiError('FILE_TOO_LARGE', `音频过大，上限 ${(AUDIO_MAX_BYTES / 1024 / 1024).toFixed(0)}MB`, 413);
+            }
+            audioPath = path.join(tmpDir, 'audio.bin');
+            await fsp.writeFile(audioPath, buf);
+          } else if (audioFile && typeof audioFile.arrayBuffer === 'function' && audioFile.size > 0) {
+            if (audioFile.size > AUDIO_MAX_BYTES) {
+              throw new ApiError('FILE_TOO_LARGE', `音频过大，上限 ${(AUDIO_MAX_BYTES / 1024 / 1024).toFixed(0)}MB`, 413);
+            }
+            audioPath = path.join(tmpDir, 'audio.bin');
+            await fsp.writeFile(audioPath, Buffer.from(await audioFile.arrayBuffer()));
+          }
+
           const outStem = String(inputName || 'asset').replace(/\.zip$/i, '');
           if (outFormat === 'svga') {
             const svgaBuf = await buildSvgaFromFrameDir(framesDir, frames.length, {
@@ -389,16 +490,24 @@ export async function POST(request) {
           // vap
           const outMp4 = path.join(tmpDir, 'out.mp4');
           const pattern = path.join(framesDir, '%03d.png');
+          const alphaW = pack === 'right-small' ? toEven(Math.ceil(padW / 2)) : padW;
           // Make alpha plane 3-channel to avoid colorspace conversions polluting alpha.
           // pack=right:  [rgb | alpha] (hstack)  => videoW = padW*2, videoH = padH
+          // pack=right-small: [rgb | alpha_small] => videoW = padW + alphaW, videoH = padH
           // pack=bottom: [rgb / alpha] (vstack)  => videoW = padW,   videoH = padH*2
           const filterComplex =
             '[0:v]format=rgba,split=2[c0][c1];' +
-            '[c1]alphaextract,format=gray,format=rgb24[a];' +
+            (pack === 'right-small'
+              ? `[c1]alphaextract,format=gray,scale=${alphaW}:${padH}:flags=bilinear,format=rgb24[a];`
+              : '[c1]alphaextract,format=gray,format=rgb24[a];') +
             '[c0]format=rgb24[c];' +
             (pack === 'bottom' ? '[c][a]vstack=inputs=2[v]' : '[c][a]hstack=inputs=2[v]');
 
-          await runFfmpegImageSeqToMp4({ pattern, fps, filterComplex, outMp4, crf });
+          if (audioPath) {
+            await runFfmpegImageSeqToMp4WithAudio({ pattern, fps, filterComplex, outMp4, crf, audioPath });
+          } else {
+            await runFfmpegImageSeqToMp4({ pattern, fps, filterComplex, outMp4, crf });
+          }
 
           const mp4Buf = await fsp.readFile(outMp4);
           const vapc = buildVapcFromSequence({
@@ -409,6 +518,7 @@ export async function POST(request) {
             fps,
             frameCount: frames.length,
             pack,
+            alphaW: pack === 'right-small' ? alphaW : undefined,
           });
           const vapBuf = rebuildWithVapc(mp4Buf, vapc);
           const vapcB64 = Buffer.from(JSON.stringify(vapc), 'utf8').toString('base64');

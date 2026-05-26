@@ -9,6 +9,7 @@ import { parseVapcFromArrayBuffer } from '../lib/vap-mp4-client';
 import {
   ASSET_ZIP_MAX_BYTES,
   BLOB_MULTIPART_THRESHOLD_BYTES,
+  safeAudioBlobPathname,
   formatBytes,
   assertLocalZipFile,
   safeZipBlobPathname,
@@ -28,6 +29,7 @@ const PENDING_TASK_KEY = 'asset_zip_convert_pending_v1';
 
 export default function AssetZipConvert() {
   const [fileList, setFileList] = useState([]);
+  const [audioFile, setAudioFile] = useState(null);
   const [format, setFormat] = useState('vap'); // vap | svga
   const [fit, setFit] = useState('contain'); // contain | cover | stretch
   const [fps, setFps] = useState(30);
@@ -152,6 +154,7 @@ export default function AssetZipConvert() {
 
     const fd = new FormData();
     fd.append('file', file);
+    if (audioFile) fd.append('audio', audioFile);
     fd.append('format', format);
     fd.append('fit', fit);
     fd.append('fps', String(fps ?? 30));
@@ -207,6 +210,20 @@ export default function AssetZipConvert() {
           height: height || null,
           pack,
         };
+
+        if (audioFile) {
+          const audioPathname = safeAudioBlobPathname(audioFile.name);
+          const audioUploaded = await upload(audioPathname, audioFile, {
+            access: 'public',
+            handleUploadUrl: '/api/blob/upload',
+            multipart: audioFile.size >= BLOB_MULTIPART_THRESHOLD_BYTES,
+            contentType: audioFile.type || 'application/octet-stream',
+          });
+          payload.audioUrl = audioUploaded.downloadUrl || audioUploaded.url;
+          payload.audioExpectedBytes = audioFile.size;
+          payload.audioName = audioFile.name;
+        }
+
         await runConvertRequest(payload, f.name);
       }
       message.success('已生成并开始下载');
@@ -312,6 +329,19 @@ export default function AssetZipConvert() {
           </p>
         </Upload.Dragger>
 
+        <Upload
+          multiple={false}
+          accept='.mp3,.m4a,.aac,.wav,.ogg,audio/*'
+          showUploadList={audioFile ? [{ uid: 'audio', name: audioFile.name }] : false}
+          beforeUpload={() => false}
+          onChange={(info) => {
+            const raw = info.fileList?.[0]?.originFileObj ?? null;
+            setAudioFile(raw);
+          }}
+        >
+          <Button disabled={loading}>选择可选音频（将合成到输出）</Button>
+        </Upload>
+
         <Card size='small' title='转换参数'>
           <Space wrap>
             <span>输出</span>
@@ -349,6 +379,7 @@ export default function AssetZipConvert() {
                   style={{ width: 220 }}
                   options={[
                     { value: 'right', label: '左右拼接（推荐 · 腾讯 VAP 标准）' },
+                    { value: 'right-small', label: '左大右小（Alpha 右侧更窄）' },
                     { value: 'bottom', label: '上下拼接（RGB上 + Alpha下）' },
                   ]}
                 />

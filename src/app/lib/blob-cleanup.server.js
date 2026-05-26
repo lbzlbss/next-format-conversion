@@ -4,7 +4,8 @@ import { del, list } from '@vercel/blob';
 export const ASSET_BLOB_PREFIX = 'asset-seq/';
 export const VAP_BLOB_PREFIX = 'asset-vap/';
 export const SVGA_BLOB_PREFIX = 'asset-svga/';
-export const TEMP_BLOB_PREFIXES = [ASSET_BLOB_PREFIX, VAP_BLOB_PREFIX, SVGA_BLOB_PREFIX];
+export const AUDIO_BLOB_PREFIX = 'asset-audio/';
+export const TEMP_BLOB_PREFIXES = [ASSET_BLOB_PREFIX, VAP_BLOB_PREFIX, SVGA_BLOB_PREFIX, AUDIO_BLOB_PREFIX];
 
 const VERCEL_BLOB_HOST_RE = /(?:^|\.)((?:public\.)?blob\.vercel-storage\.com|vercel-storage\.com)$/i;
 

@@ -2,8 +2,13 @@ import { handleUpload } from '@vercel/blob/client';
 import { NextResponse } from 'next/server';
 
 import { ApiError, toErrorResponse } from '../../_lib/guard';
-import { purgeAllTempBlobs, SVGA_BLOB_PREFIX, VAP_BLOB_PREFIX } from '../../../lib/blob-cleanup.server.js';
-import { ASSET_ZIP_MAX_BYTES, VAP_TOOL_MAX_BYTES } from '../../../lib/upload-limits.js';
+import {
+  AUDIO_BLOB_PREFIX,
+  purgeAllTempBlobs,
+  SVGA_BLOB_PREFIX,
+  VAP_BLOB_PREFIX,
+} from '../../../lib/blob-cleanup.server.js';
+import { ASSET_ZIP_MAX_BYTES, AUDIO_MAX_BYTES, VAP_TOOL_MAX_BYTES } from '../../../lib/upload-limits.js';
 
 const ZIP_CONTENT_TYPES = [
   'application/zip',
@@ -14,6 +19,16 @@ const ZIP_CONTENT_TYPES = [
 const VAP_CONTENT_TYPES = ['video/mp4', 'application/octet-stream'];
 
 const SVGA_CONTENT_TYPES = ['application/octet-stream'];
+
+const AUDIO_CONTENT_TYPES = [
+  'audio/mpeg',
+  'audio/mp3',
+  'audio/mp4',
+  'audio/aac',
+  'audio/wav',
+  'audio/ogg',
+  'application/octet-stream',
+];
 
 export async function POST(request) {
   try {
@@ -26,7 +41,8 @@ export async function POST(request) {
         const p = String(pathname || '');
         const isVap = p.startsWith(VAP_BLOB_PREFIX);
         const isSvga = p.startsWith(SVGA_BLOB_PREFIX);
-        const maxBytes = isVap || isSvga ? VAP_TOOL_MAX_BYTES : ASSET_ZIP_MAX_BYTES;
+        const isAudio = p.startsWith(AUDIO_BLOB_PREFIX);
+        const maxBytes = isAudio ? AUDIO_MAX_BYTES : isVap || isSvga ? VAP_TOOL_MAX_BYTES : ASSET_ZIP_MAX_BYTES;
 
         if (requestedSize > maxBytes) {
           throw new Error(
@@ -34,11 +50,13 @@ export async function POST(request) {
           );
         }
 
-        const allowedContentTypes = isVap
-          ? VAP_CONTENT_TYPES
-          : isSvga
-            ? SVGA_CONTENT_TYPES
-            : ZIP_CONTENT_TYPES;
+        const allowedContentTypes = isAudio
+          ? AUDIO_CONTENT_TYPES
+          : isVap
+            ? VAP_CONTENT_TYPES
+            : isSvga
+              ? SVGA_CONTENT_TYPES
+              : ZIP_CONTENT_TYPES;
 
         return {
           allowedContentTypes,
