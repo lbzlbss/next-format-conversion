@@ -1,7 +1,7 @@
 {
   "crons": [
     {
-      "path": "/api/blob/cleanup?maxAgeHours=6",
+      "path": "/api/blob/cleanup?maxAgeHours=2",
       "schedule": "0 3 * * *"
     }
   ]

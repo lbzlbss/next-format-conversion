@@ -2,6 +2,7 @@
 
 import { upload } from '@vercel/blob/client';
 
+import { releaseTempBlob } from './blob-release-client.js';
 import {
   BLOB_CLIENT_UPLOAD_THRESHOLD_BYTES,
   BLOB_MULTIPART_THRESHOLD_BYTES,
@@ -31,22 +32,32 @@ export async function postVapApi({ file, action, options = {} }) {
   const isSvga = /\.svga$/i.test(file.name) || action === 'svga-to-vap';
   const pathname = isSvga ? safeSvgaBlobPathname(file.name) : safeVapBlobPathname(file.name);
 
-  const uploaded = await upload(pathname, file, {
-    access: 'public',
-    handleUploadUrl: '/api/blob/upload',
-    multipart: file.size >= BLOB_MULTIPART_THRESHOLD_BYTES,
-    contentType: file.type || 'application/octet-stream',
-  });
+  /** @type {string | null} */
+  let uploadedUrl = null;
+  try {
+    const uploaded = await upload(pathname, file, {
+      access: 'public',
+      handleUploadUrl: '/api/blob/upload',
+      multipart: file.size >= BLOB_MULTIPART_THRESHOLD_BYTES,
+      contentType: file.type || 'application/octet-stream',
+    });
+    uploadedUrl = uploaded.downloadUrl || uploaded.url;
 
-  return fetch('/api/vap', {
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({
-      blobUrl: uploaded.downloadUrl || uploaded.url,
-      expectedBytes: file.size,
-      filename: file.name,
-      action,
-      options,
-    }),
-  });
+    return await fetch('/api/vap', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        blobUrl: uploadedUrl,
+        expectedBytes: file.size,
+        filename: file.name,
+        action,
+        options,
+      }),
+    });
+  } catch (e) {
+    if (uploadedUrl) {
+      await releaseTempBlob(uploadedUrl).catch(() => {});
+    }
+    throw e;
+  }
 }

@@ -297,6 +297,7 @@ export async function POST(request) {
         /** @type {string | null} */
         let sourceBlobUrl = null;
 
+        try {
         if (blobUrl) {
           let parsedUrl = null;
           try {
@@ -319,7 +320,7 @@ export async function POST(request) {
 
           sourceBlobUrl = blobUrl;
           try {
-            await purgeAssetBlobs({ maxAgeMs: 6 * 60 * 60 * 1000 });
+            await purgeAssetBlobs({ maxAgeMs: 2 * 60 * 60 * 1000 });
           } catch {
             /* 清理失败不阻断转换 */
           }
@@ -511,6 +512,8 @@ export async function POST(request) {
           try {
             await fsp.rm(tmpDir, { recursive: true, force: true });
           } catch (_) {}
+        }
+        } finally {
           if (sourceBlobUrl) {
             await deleteAssetBlobQuietly(sourceBlobUrl);
           }

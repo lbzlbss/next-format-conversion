@@ -1,7 +1,12 @@
 import { NextResponse } from 'next/server';
 
 import { ApiError, jsonError, toErrorResponse } from '../../_lib/guard.js';
-import { purgeAllTempBlobs, purgeAssetBlobs, TEMP_BLOB_PREFIXES } from '../../../lib/blob-cleanup.server.js';
+import {
+  purgeAllTempBlobs,
+  purgeAssetBlobs,
+  releaseTempAssetBlob,
+  TEMP_BLOB_PREFIXES,
+} from '../../../lib/blob-cleanup.server.js';
 
 function assertCleanupAuth(request) {
   const secret = process.env.CRON_SECRET || process.env.BLOB_CLEANUP_SECRET;
@@ -15,15 +20,51 @@ function assertCleanupAuth(request) {
 }
 
 /**
- * 清理 asset-seq/ 临时 ZIP。Vercel Cron 或管理员手动调用。
+ * 批量清理：需 Bearer 密钥。Vercel Cron 或管理员调用。
  * GET/POST ?maxAgeHours=24 （0 = 清空该前缀下全部）
+ *
+ * 单条释放（中断/放弃任务）：GET/POST ?blobUrl=... 或 POST JSON { blobUrl }，无需密钥
  */
 export async function GET(request) {
+  const { searchParams } = new URL(request.url);
+  if (searchParams.get('blobUrl')) {
+    return handleReleaseUrl(String(searchParams.get('blobUrl')).trim());
+  }
   return runCleanup(request);
 }
 
 export async function POST(request) {
+  const { searchParams } = new URL(request.url);
+  if (searchParams.get('blobUrl')) {
+    return handleReleaseUrl(String(searchParams.get('blobUrl')).trim());
+  }
+
+  const contentType = String(request.headers.get('content-type') || '').toLowerCase();
+  if (contentType.includes('application/json')) {
+    try {
+      const body = await request.json();
+      const blobUrl = String(body?.blobUrl || '').trim();
+      if (blobUrl) {
+        return handleReleaseUrl(blobUrl);
+      }
+    } catch {
+      /* 走批量清理 */
+    }
+  }
+
   return runCleanup(request);
+}
+
+async function handleReleaseUrl(blobUrl) {
+  try {
+    if (!blobUrl) {
+      throw new ApiError('INVALID_FORMAT', '缺少 blobUrl', 400);
+    }
+    const result = await releaseTempAssetBlob(blobUrl);
+    return NextResponse.json({ ok: true, ...result });
+  } catch (e) {
+    return toErrorResponse(e);
+  }
 }
 
 async function runCleanup(request) {

@@ -38,6 +38,31 @@ export async function deleteAssetBlobQuietly(blobUrl) {
 }
 
 /**
+ * 仅允许删除本项目临时前缀下的 Blob（供前端放弃任务/中断后释放，URL 含随机后缀）
+ * @param {string} blobUrl
+ */
+export function isTempAssetBlobUrl(blobUrl) {
+  if (!isVercelBlobUrl(blobUrl)) return false;
+  try {
+    const path = decodeURIComponent(new URL(blobUrl).pathname);
+    return TEMP_BLOB_PREFIXES.some((prefix) => path.includes(prefix.replace(/\/$/, '')));
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * @param {string} blobUrl
+ */
+export async function releaseTempAssetBlob(blobUrl) {
+  if (!isTempAssetBlobUrl(blobUrl)) {
+    return { deleted: false, reason: 'not_temp_blob' };
+  }
+  const deleted = await deleteAssetBlobQuietly(blobUrl);
+  return { deleted, reason: deleted ? 'ok' : 'delete_failed' };
+}
+
+/**
  * 清理 asset-seq/ 下过期或未完成的临时 ZIP
  * @param {{ prefix?: string, maxAgeMs?: number }} options maxAgeMs=0 表示删除该前缀下全部对象
  */

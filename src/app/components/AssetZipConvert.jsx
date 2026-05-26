@@ -6,6 +6,7 @@ import { InboxOutlined, DownloadOutlined } from '@ant-design/icons';
 import { upload } from '@vercel/blob/client';
 import VapWebglPreview from './home/VapWebglPreview';
 import { parseVapcFromArrayBuffer } from '../lib/vap-mp4-client';
+import { releaseTempBlob } from '../lib/blob-release-client';
 import {
   ASSET_ZIP_MAX_BYTES,
   BLOB_MULTIPART_THRESHOLD_BYTES,
@@ -129,10 +130,33 @@ export default function AssetZipConvert() {
     }
   };
 
-  const runConvertRequest = async (payload, fallbackFileName) => {
-    setStage('converting');
+  const savePendingTask = (payload) => {
     window.sessionStorage.setItem(PENDING_TASK_KEY, JSON.stringify(payload));
     setPendingTask(payload);
+  };
+
+  const clearPendingTask = () => {
+    window.sessionStorage.removeItem(PENDING_TASK_KEY);
+    setPendingTask(null);
+  };
+
+  const abandonPendingTask = async () => {
+    const url = pendingTask?.blobUrl;
+    clearPendingTask();
+    if (url) {
+      try {
+        await releaseTempBlob(url);
+        message.success('已放弃任务并释放云端临时文件');
+      } catch (e) {
+        message.warning(`任务已清除，云端文件可能需等待定时清理：${e?.message || e}`);
+      }
+    } else {
+      message.info('已清除本地任务记录');
+    }
+  };
+
+  const runConvertRequest = async (payload, fallbackFileName) => {
+    setStage('converting');
     clearPreview();
 
     const resp = await fetch('/api/asset-convert', {
@@ -141,9 +165,7 @@ export default function AssetZipConvert() {
       body: JSON.stringify(payload),
     });
     await finishConvertResponse(resp, fallbackFileName, payload.format);
-
-    window.sessionStorage.removeItem(PENDING_TASK_KEY);
-    setPendingTask(null);
+    clearPendingTask();
   };
 
   const runDirectConvert = async (file, fallbackFileName) => {
@@ -175,12 +197,19 @@ export default function AssetZipConvert() {
       return;
     }
     setLoading(true);
+    /** @type {string | null} */
+    let stagedBlobUrl = null;
     try {
       await assertLocalZipFile(f);
 
       if (f.size < BLOB_MULTIPART_THRESHOLD_BYTES) {
         await runDirectConvert(f, f.name);
       } else {
+        if (pendingTask?.blobUrl) {
+          await releaseTempBlob(pendingTask.blobUrl).catch(() => {});
+          clearPendingTask();
+        }
+
         setStage('uploading');
         const blobPathname = safeZipBlobPathname(f.name);
         const uploaded = await upload(blobPathname, f, {
@@ -196,8 +225,9 @@ export default function AssetZipConvert() {
           },
         });
 
+        stagedBlobUrl = uploaded.downloadUrl || uploaded.url;
         const payload = {
-          blobUrl: uploaded.downloadUrl || uploaded.url,
+          blobUrl: stagedBlobUrl,
           filename: f.name,
           expectedBytes: f.size,
           format,
@@ -208,10 +238,15 @@ export default function AssetZipConvert() {
           pack,
         };
 
+        savePendingTask(payload);
         await runConvertRequest(payload, f.name);
       }
       message.success('已生成并开始下载');
     } catch (e) {
+      clearPendingTask();
+      if (stagedBlobUrl) {
+        await releaseTempBlob(stagedBlobUrl).catch(() => {});
+      }
       const errMsg = e?.message || '转换失败';
       if (/storage quota|BLOB_QUOTA|quota exceeded/i.test(errMsg)) {
         message.error(
@@ -238,11 +273,16 @@ export default function AssetZipConvert() {
       return;
     }
     setLoading(true);
+    const resumeUrl = pendingTask.blobUrl;
     try {
       await runConvertRequest(pendingTask, pendingTask.filename);
       message.success('已恢复并完成下载');
     } catch (e) {
-      message.error(e?.message || '恢复任务失败');
+      clearPendingTask();
+      if (resumeUrl) {
+        await releaseTempBlob(resumeUrl).catch(() => {});
+      }
+      message.error(e?.message || '恢复任务失败（云端临时文件已尝试释放）');
     } finally {
       setStage('idle');
       setLoading(false);
@@ -257,11 +297,16 @@ export default function AssetZipConvert() {
             type='warning'
             showIcon
             title='检测到上次转换任务'
-            description={`文件：${pendingTask.filename || 'asset.zip'}，可直接继续转换（无需重新上传）。`}
+            description={`文件：${pendingTask.filename || 'asset.zip'}。上传已完成，可继续转换；若不再需要请放弃以释放 Blob 配额。`}
             action={
-              <Button size='small' onClick={onResumePending} loading={loading}>
-                继续转换
-              </Button>
+              <Space>
+                <Button size='small' type='primary' onClick={onResumePending} loading={loading}>
+                  继续转换
+                </Button>
+                <Button size='small' onClick={abandonPendingTask} disabled={loading}>
+                  放弃并释放
+                </Button>
+              </Space>
             }
           />
         ) : null}
