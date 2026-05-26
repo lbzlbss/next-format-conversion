@@ -1,27 +1,17 @@
 import { NextResponse } from 'next/server';
+import fs from 'fs';
 import { promises as fsp } from 'fs';
 import path from 'path';
 import os from 'os';
 import { randomUUID } from 'crypto';
+import { createRequire } from 'node:module';
+import ffmpeg from 'fluent-ffmpeg';
 import JSZip from 'jszip';
 import sharp from 'sharp';
 
 import { ApiError, LIMITS, assertFile, assertMaxFrames, toErrorResponse, withTimeout } from '../_lib/guard';
-import { processSequenceFrameToPng, processSequenceFrameToRgba } from '../../lib/asset-frame-process.server.js';
-import {
-  assertConvertDurationBudget,
-  assertSvgaMemoryBudget,
-  assertVapFrameCount,
-  assertVapMemoryBudget,
-  assertVercelTmpBudget,
-  estimateFramesOnDiskBytes,
-  estimateSvgaMemoryBytes,
-  estimateVapMemoryBytes,
-  estimateVapTmpBytes,
-} from '../../lib/asset-tmp-budget.server.js';
 import { deleteAssetBlobQuietly, purgeAssetBlobs } from '../../lib/blob-cleanup.server.js';
 import { downloadBlobZipBuffer } from '../../lib/blob-download.server.js';
-import { runFfmpegRawRgbaPipe } from '../../lib/ffmpeg-image-pipe.server.js';
 import { validateZipBuffer } from '../../lib/zip-extract.server.js';
 import { unsupportedFrameUserMessage } from '../../lib/image-sniff.js';
 import { extractZipImageFrames } from '../../lib/zip-extract.server.js';
@@ -30,7 +20,26 @@ import { buildVapcFromSequence } from '../../lib/vapc-builder.js';
 import { rebuildWithVapc } from '../../lib/vap-mp4.server.js';
 import { AUDIO_MAX_BYTES } from '../../lib/upload-limits.js';
 
+const _require = createRequire(import.meta.url);
 export const maxDuration = 300;
+
+// ─── ffmpeg path ───────────────────────────────────────────────────────────────
+let ffmpegBin = null;
+try {
+  const ffmpegStatic = _require('ffmpeg-static');
+  const binPath = typeof ffmpegStatic === 'string' ? ffmpegStatic : ffmpegStatic?.default;
+  if (binPath && fs.existsSync(binPath)) ffmpegBin = binPath;
+} catch (_) {}
+
+if (!ffmpegBin) {
+  for (const p of ['/usr/bin/ffmpeg', '/usr/local/bin/ffmpeg', path.join(process.cwd(), 'public', 'ffmpeg', 'ffmpeg')]) {
+    if (fs.existsSync(p)) {
+      ffmpegBin = p;
+      break;
+    }
+  }
+}
+if (ffmpegBin) ffmpeg.setFfmpegPath(ffmpegBin);
 
 function parsePositiveInt(v) {
   if (v == null || v === '') return null;
@@ -53,42 +62,139 @@ function ceilTo(v, m) {
   return Math.ceil(n / mm) * mm;
 }
 
-/**
- * @param {Array<{ name: string, readBuffer: () => Promise<Buffer> }>} frames
- */
-async function* iterateSequenceRgba(frames, { encW, encH, padW, padH, fit }) {
-  for (let i = 0; i < frames.length; i++) {
-    const frame = frames[i];
-    const buf = await frame.readBuffer();
-    yield await processSequenceFrameToRgba(buf, {
-      encW,
-      encH,
-      padW,
-      padH,
-      fit,
-      frameName: frame.name,
-    });
-  }
+function fitToSharp(fit) {
+  if (fit === 'stretch') return { fit: 'fill' };
+  if (fit === 'cover') return { fit: 'cover' };
+  return { fit: 'contain' };
 }
 
-async function buildSvgaFromZipFrames(frames, { fps, width, height, encW, encH, padW, padH, fit }) {
-  const frameCount = frames.length;
+function runFfmpeg(input, output, outputOptions = []) {
+  return new Promise((resolve, reject) => {
+    let stderr = '';
+    const cmd = ffmpeg(input).outputOptions(outputOptions).output(output);
+    cmd
+      .on('stderr', (line) => {
+        stderr += line + '\n';
+      })
+      .on('end', resolve)
+      .on('error', (err) => reject(new Error(`${err.message}\nffmpeg stderr:\n${stderr}`)))
+      .run();
+  });
+}
+
+function runFfmpegImageSeqToMp4({ pattern, fps, filterComplex, outMp4, crf = 18 }) {
+  return new Promise((resolve, reject) => {
+    let stderr = '';
+    const cmd = ffmpeg()
+      .input(pattern)
+      // IMPORTANT: -framerate is an INPUT option for image sequences
+      .inputOptions(['-framerate', String(fps), '-start_number', '0'])
+      .outputOptions([
+        '-y',
+        '-filter_complex',
+        filterComplex,
+        '-map',
+        '[v]',
+        '-f',
+        'mp4',
+        '-c:v',
+        'libx264',
+        // safer defaults to avoid decoder artifacts
+        '-preset',
+        'veryfast',
+        '-crf',
+        String(Math.min(28, Math.max(15, crf))),
+        // Make every frame a keyframe (intra-only) to avoid P/B-frame corruption artifacts.
+        '-g',
+        '1',
+        '-keyint_min',
+        '1',
+        '-sc_threshold',
+        '0',
+        // VAP packing works better with no B-frames (less reordering)
+        '-bf',
+        '0',
+        '-pix_fmt',
+        'yuv420p',
+        '-an',
+        '-movflags',
+        '+faststart',
+      ])
+      .output(outMp4);
+
+    cmd
+      .on('stderr', (line) => {
+        stderr += line + '\n';
+      })
+      .on('end', resolve)
+      .on('error', (err) => reject(new Error(`${err.message}\nffmpeg stderr:\n${stderr}`)))
+      .run();
+  });
+}
+
+function runFfmpegImageSeqToMp4WithAudio({ pattern, fps, filterComplex, outMp4, crf = 18, audioPath }) {
+  return new Promise((resolve, reject) => {
+    let stderr = '';
+    const cmd = ffmpeg()
+      .input(pattern)
+      .inputOptions(['-framerate', String(fps), '-start_number', '0'])
+      .input(audioPath)
+      .outputOptions([
+        '-y',
+        '-filter_complex',
+        filterComplex,
+        '-map',
+        '[v]',
+        '-map',
+        '1:a:0?',
+        '-shortest',
+        '-f',
+        'mp4',
+        '-c:v',
+        'libx264',
+        '-preset',
+        'veryfast',
+        '-crf',
+        String(Math.min(28, Math.max(15, crf))),
+        '-g',
+        '1',
+        '-keyint_min',
+        '1',
+        '-sc_threshold',
+        '0',
+        '-bf',
+        '0',
+        '-pix_fmt',
+        'yuv420p',
+        '-c:a',
+        'aac',
+        '-b:a',
+        '128k',
+        '-movflags',
+        '+faststart',
+      ])
+      .output(outMp4);
+
+    cmd
+      .on('stderr', (line) => {
+        stderr += line + '\n';
+      })
+      .on('end', resolve)
+      .on('error', (err) => reject(new Error(`${err.message}\nffmpeg stderr:\n${stderr}`)))
+      .run();
+  });
+}
+
+async function buildSvgaFromFrameDir(framesDir, frameCount, { fps, width, height }) {
   const zip = new JSZip();
   const images = {};
 
   for (let i = 0; i < frameCount; i++) {
     const key = `image_${i}`;
-    const buf = await frames[i].readBuffer();
-    const pngBuf = await processSequenceFrameToPng(buf, {
-      encW,
-      encH,
-      padW,
-      padH,
-      fit,
-      frameName: frames[i].name,
-    });
-    zip.file(`images/${key}.png`, pngBuf);
-    images[key] = `images/${key}`;
+    const pngPath = path.join(framesDir, `${String(i).padStart(3, '0')}.png`);
+    const buf = await fsp.readFile(pngPath);
+    zip.file(`images/${key}.png`, buf);
+    images[key] = `images/${key}`; // no .png suffix
   }
 
   const IDENTITY = { a: 1, b: 0, c: 0, d: 1, tx: 0, ty: 0 };
@@ -252,8 +358,9 @@ export async function POST(request) {
         if (!['right', 'right-small', 'bottom'].includes(pack)) {
           throw new ApiError('INVALID_FORMAT', 'pack 仅支持 right | right-small | bottom', 400);
         }
-        /** @type {string | null} */
-        let tmpDir = null;
+        const tmpDir = await fsp.mkdtemp(path.join(os.tmpdir(), `asset_zip_${randomUUID()}_`));
+        const framesDir = path.join(tmpDir, 'frames');
+        await fsp.mkdir(framesDir, { recursive: true });
         let audioPath = null;
 
         let zipSession = null;
@@ -292,32 +399,41 @@ export async function POST(request) {
           const encH = toEven(targetH);
           const padW = ceilTo(encW, 16);
           const padH = ceilTo(encH, 16);
-          const frameCount = frames.length;
-          assertConvertDurationBudget(frameCount, padW, padH, zipBuffer.length);
 
-          const framesOnDiskBytes = estimateFramesOnDiskBytes(frameCount, padW, padH);
-          const willHaveAudio = Boolean(zipSession.audio);
-          if (outFormat === 'svga') {
-            assertSvgaMemoryBudget(estimateSvgaMemoryBytes(frameCount, padW, padH), {
-              frameCount,
-              padW,
-              padH,
-            });
-          } else {
-            assertVapFrameCount(frameCount, padW, padH, pack);
-            assertVapMemoryBudget(
-              estimateVapMemoryBytes(frameCount, padW, padH, pack),
-              { frameCount, padW, padH, pack, zipBytes: zipBuffer.length },
-              zipBuffer.length,
-            );
-            assertVercelTmpBudget(estimateVapTmpBytes(frameCount, padW, padH, pack, willHaveAudio), {
-              frameCount,
-              padW,
-              padH,
-              pack,
-              framesOnDiskBytes,
-              mode: 'image2pipe+stdout',
-            });
+          const resizeOpt = fitToSharp(fit);
+
+          for (let i = 0; i < frames.length; i++) {
+            const frameName = frames[i].name;
+            const buf = await frames[i].readBuffer();
+            let pngBuf;
+            try {
+              const base = sharp(buf, { failOn: 'none' })
+                .ensureAlpha()
+                .resize(encW, encH, {
+                  ...resizeOpt,
+                  background: { r: 0, g: 0, b: 0, alpha: 0 },
+                })
+                .extend({
+                  top: 0,
+                  left: 0,
+                  right: Math.max(0, padW - encW),
+                  bottom: Math.max(0, padH - encH),
+                  background: { r: 0, g: 0, b: 0, alpha: 0 },
+                });
+              pngBuf = await base.png().toBuffer();
+            } catch (e) {
+              const msg = String(e?.message || e);
+              if (/unsupported image|input buffer/i.test(msg)) {
+                throw new ApiError('INVALID_FORMAT', unsupportedFrameUserMessage(frameName), 400, {
+                  frame: frameName,
+                  frameIndex: i,
+                });
+              }
+              throw e;
+            }
+
+            const outPngPath = path.join(framesDir, `${String(i).padStart(3, '0')}.png`);
+            await fsp.writeFile(outPngPath, pngBuf);
           }
 
           // 压缩包内可选音频（mp3/m4a/aac/wav 等，取第一个）
@@ -330,7 +446,6 @@ export async function POST(request) {
                 413,
               );
             }
-            tmpDir = await fsp.mkdtemp(path.join(os.tmpdir(), `asset_zip_${randomUUID()}_`));
             const audioExt = path.extname(zipSession.audio.name) || '.mp3';
             audioPath = path.join(tmpDir, `bundled_audio${audioExt}`);
             await fsp.writeFile(audioPath, audioBuf);
@@ -341,15 +456,10 @@ export async function POST(request) {
           let successResponse;
 
           if (outFormat === 'svga') {
-            const svgaBuf = await buildSvgaFromZipFrames(frames, {
+            const svgaBuf = await buildSvgaFromFrameDir(framesDir, frames.length, {
               fps,
               width: encW,
               height: encH,
-              encW,
-              encH,
-              padW,
-              padH,
-              fit,
             });
             successResponse = new NextResponse(svgaBuf, {
               headers: {
@@ -358,41 +468,17 @@ export async function POST(request) {
               },
             });
           } else {
-            // vap：stdin 喂帧 + stdout 收 MP4，避免 /tmp 落盘 PNG 与 faststart 二次写盘
+            const outMp4 = path.join(tmpDir, 'out.mp4');
+            const pattern = path.join(framesDir, '%03d.png');
             const filterComplex = buildVapPackFilterComplex({ pack, padW, padH, encH });
 
-            let mp4Buf;
-            try {
-              mp4Buf = /** @type {Buffer} */ (
-                await runFfmpegRawRgbaPipe({
-                  fps,
-                  filterComplex,
-                  crf,
-                  audioPath,
-                  padW,
-                  padH,
-                  frames: iterateSequenceRgba(frames, { encW, encH, padW, padH, fit }),
-                })
-              );
-            } catch (e) {
-              const raw = String(e?.message || e);
-              if (/enospc|no space left/i.test(raw)) {
-                throw new ApiError(
-                  'DISK_FULL',
-                  `服务端 /tmp 已满（约 512MB）。当前 ${frameCount} 帧、约 ${padW}×${padH}、ZIP ${(zipBuffer.length / 1024 / 1024).toFixed(0)}MB。请填写更小的宽/高、减帧或拆 ZIP。`,
-                  507,
-                  {
-                    frameCount,
-                    padW,
-                    padH,
-                    pack,
-                    zipBytes: zipBuffer.length,
-                    vercel_tmp_limit_mb: 512,
-                  },
-                );
-              }
-              throw e;
+            if (audioPath) {
+              await runFfmpegImageSeqToMp4WithAudio({ pattern, fps, filterComplex, outMp4, crf, audioPath });
+            } else {
+              await runFfmpegImageSeqToMp4({ pattern, fps, filterComplex, outMp4, crf });
             }
+
+            const mp4Buf = await fsp.readFile(outMp4);
             const vapc = buildVapcFromSequence({
               encW,
               encH,
@@ -425,14 +511,12 @@ export async function POST(request) {
           } catch {
             /* ignore */
           }
-          if (tmpDir) {
-            try {
-              await fsp.rm(tmpDir, { recursive: true, force: true });
-            } catch (_) {}
-          }
+          try {
+            await fsp.rm(tmpDir, { recursive: true, force: true });
+          } catch (_) {}
         }
       })(),
-      280_000
+      540000
     );
   } catch (e) {
     return toErrorResponse(e);
