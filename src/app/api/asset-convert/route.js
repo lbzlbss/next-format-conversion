@@ -190,7 +190,6 @@ export async function POST(request) {
         /** @type {string | null} */
         let sourceBlobUrl = null;
 
-        try {
         if (blobUrl) {
           let parsedUrl = null;
           try {
@@ -431,7 +430,6 @@ export async function POST(request) {
               await fsp.rm(tmpDir, { recursive: true, force: true });
             } catch (_) {}
           }
-        }
         }
       })(),
       540000
