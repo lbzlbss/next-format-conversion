@@ -106,6 +106,39 @@ function openZipFromBuffer(buffer) {
   });
 }
 
+/** ZIP 内条目所在目录（统一 `/`，根目录为 `''`） */
+function entryDir(fileName) {
+  const normalized = String(fileName || '').replace(/\\/g, '/');
+  const dir = path.posix.dirname(normalized);
+  return dir === '.' ? '' : dir;
+}
+
+/** 序列帧数量最多的目录视为序列帧根目录 */
+function resolveFramesRootDir(imageEntries) {
+  const counts = new Map();
+  for (const entry of imageEntries) {
+    const d = entryDir(entry.fileName);
+    counts.set(d, (counts.get(d) || 0) + 1);
+  }
+  let bestDir = '';
+  let bestCount = 0;
+  for (const [d, c] of counts) {
+    if (c > bestCount || (c === bestCount && d.length < bestDir.length)) {
+      bestDir = d;
+      bestCount = c;
+    }
+  }
+  return bestDir;
+}
+
+/** 仅选取与序列帧同目录（同级）的音频 */
+function pickAudioSiblingToFrames(audioEntries, frameRootDir) {
+  const siblings = audioEntries.filter((e) => entryDir(e.fileName) === frameRootDir);
+  if (siblings.length === 0) return null;
+  siblings.sort((a, b) => cmpNatural(path.basename(a.fileName), path.basename(b.fileName)));
+  return siblings[0];
+}
+
 function readEntryToBuffer(zipfile, entry) {
   return new Promise((resolve, reject) => {
     zipfile.openReadStream(entry, (err, stream) => {
@@ -123,8 +156,8 @@ function readEntryToBuffer(zipfile, entry) {
 
 function listImageAndAudioEntries(zipfile) {
   return new Promise((resolve, reject) => {
-    const entries = [];
-    let audioEntry = null;
+    const imageEntries = [];
+    const audioEntries = [];
     zipfile.readEntry();
     zipfile.on('entry', (entry) => {
       if (/\/$/.test(entry.fileName) || shouldSkipZipEntry(entry.fileName)) {
@@ -133,7 +166,7 @@ function listImageAndAudioEntries(zipfile) {
       }
       const ext = path.extname(entry.fileName).toLowerCase();
       if (AUDIO_EXTS.has(ext)) {
-        if (!audioEntry) audioEntry = entry;
+        audioEntries.push(entry);
         zipfile.readEntry();
         return;
       }
@@ -141,14 +174,16 @@ function listImageAndAudioEntries(zipfile) {
         zipfile.readEntry();
         return;
       }
-      entries.push(entry);
+      imageEntries.push(entry);
       zipfile.readEntry();
     });
     zipfile.on('end', () => {
-      entries.sort((a, b) =>
-        cmpNatural(path.basename(a.fileName), path.basename(b.fileName)),
-      );
-      resolve({ entries, audioEntry });
+      const frameRootDir = resolveFramesRootDir(imageEntries);
+      const entries = imageEntries
+        .filter((e) => entryDir(e.fileName) === frameRootDir)
+        .sort((a, b) => cmpNatural(path.basename(a.fileName), path.basename(b.fileName)));
+      const audioEntry = pickAudioSiblingToFrames(audioEntries, frameRootDir);
+      resolve({ entries, audioEntry, frameRootDir });
     });
     zipfile.on('error', reject);
   });
