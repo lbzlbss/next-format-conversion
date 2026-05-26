@@ -9,21 +9,25 @@ import { requireFfmpegBin } from './ffmpeg-path.server.js';
  *   crf?: number,
  *   audioPath?: string | null,
  *   frames: AsyncIterable<Buffer> | Iterable<Buffer>,
+ *   padW: number,
+ *   padH: number,
  *   outMp4?: string,
  * }} opts
  * @returns {Promise<Buffer | void>}
  */
-export function runFfmpegImage2Pipe(opts) {
-  const { fps, filterComplex, crf = 18, audioPath = null, frames, outMp4 } = opts;
+export function runFfmpegRawRgbaPipe(opts) {
+  const { fps, filterComplex, crf = 18, audioPath = null, frames, padW, padH, outMp4 } = opts;
   const toBuffer = !outMp4;
   const ffmpegBin = requireFfmpegBin();
 
   const args = [
     '-y',
     '-f',
-    'image2pipe',
-    '-vcodec',
-    'png',
+    'rawvideo',
+    '-pix_fmt',
+    'rgba',
+    '-s',
+    `${padW}x${padH}`,
     '-framerate',
     String(fps),
     '-i',
@@ -59,11 +63,12 @@ export function runFfmpegImage2Pipe(opts) {
   }
 
   if (toBuffer) {
-    // 不写 /tmp：避免 +faststart 二次落盘导致 ENOSPC
     args.push('-f', 'mp4', '-movflags', 'frag_keyframe+empty_moov+default_base_moof', 'pipe:1');
   } else {
     args.push('-movflags', '+faststart', outMp4);
   }
+
+  const frameBytes = padW * padH * 4;
 
   return new Promise((resolve, reject) => {
     const proc = spawn(ffmpegBin, args, {
@@ -94,6 +99,10 @@ export function runFfmpegImage2Pipe(opts) {
 
     const writeChunk = (buf) =>
       new Promise((res, rej) => {
+        if (buf.length !== frameBytes) {
+          rej(new Error(`帧字节数 ${buf.length} 与 ${frameBytes} 不符`));
+          return;
+        }
         const ok = proc.stdin.write(buf, (err) => {
           if (err) rej(err);
         });
@@ -103,8 +112,8 @@ export function runFfmpegImage2Pipe(opts) {
 
     (async () => {
       try {
-        for await (const pngBuf of frames) {
-          await writeChunk(pngBuf);
+        for await (const rgba of frames) {
+          await writeChunk(rgba);
         }
         proc.stdin.end();
       } catch (e) {

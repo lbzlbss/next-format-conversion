@@ -7,8 +7,9 @@ import JSZip from 'jszip';
 import sharp from 'sharp';
 
 import { ApiError, LIMITS, assertFile, assertMaxFrames, toErrorResponse, withTimeout } from '../_lib/guard';
-import { processSequenceFrameToPng } from '../../lib/asset-frame-process.server.js';
+import { processSequenceFrameToPng, processSequenceFrameToRgba } from '../../lib/asset-frame-process.server.js';
 import {
+  assertConvertDurationBudget,
   assertSvgaMemoryBudget,
   assertVapFrameCount,
   assertVapMemoryBudget,
@@ -20,7 +21,7 @@ import {
 } from '../../lib/asset-tmp-budget.server.js';
 import { deleteAssetBlobQuietly, purgeAssetBlobs } from '../../lib/blob-cleanup.server.js';
 import { downloadBlobZipBuffer } from '../../lib/blob-download.server.js';
-import { runFfmpegImage2Pipe } from '../../lib/ffmpeg-image-pipe.server.js';
+import { runFfmpegRawRgbaPipe } from '../../lib/ffmpeg-image-pipe.server.js';
 import { validateZipBuffer } from '../../lib/zip-extract.server.js';
 import { unsupportedFrameUserMessage } from '../../lib/image-sniff.js';
 import { extractZipImageFrames } from '../../lib/zip-extract.server.js';
@@ -29,7 +30,7 @@ import { buildVapcFromSequence } from '../../lib/vapc-builder.js';
 import { rebuildWithVapc } from '../../lib/vap-mp4.server.js';
 import { AUDIO_MAX_BYTES } from '../../lib/upload-limits.js';
 
-export const maxDuration = 300;
+export const maxDuration = 800;
 
 function parsePositiveInt(v) {
   if (v == null || v === '') return null;
@@ -55,11 +56,11 @@ function ceilTo(v, m) {
 /**
  * @param {Array<{ name: string, readBuffer: () => Promise<Buffer> }>} frames
  */
-async function* iterateSequencePngs(frames, { encW, encH, padW, padH, fit }) {
+async function* iterateSequenceRgba(frames, { encW, encH, padW, padH, fit }) {
   for (let i = 0; i < frames.length; i++) {
     const frame = frames[i];
     const buf = await frame.readBuffer();
-    yield await processSequenceFrameToPng(buf, {
+    yield await processSequenceFrameToRgba(buf, {
       encW,
       encH,
       padW,
@@ -211,11 +212,7 @@ export async function POST(request) {
           }
 
           sourceBlobUrl = blobUrl;
-          try {
-            await purgeAssetBlobs({ maxAgeMs: 2 * 60 * 60 * 1000 });
-          } catch {
-            /* 清理失败不阻断转换 */
-          }
+          purgeAssetBlobs({ maxAgeMs: 2 * 60 * 60 * 1000 }).catch(() => {});
 
           zipBuffer = await downloadBlobZipBuffer(blobUrl, expectedBytes || null, (url, timeoutMs) =>
             fetchWithTimeout(url, timeoutMs),
@@ -296,6 +293,7 @@ export async function POST(request) {
           const padW = ceilTo(encW, 16);
           const padH = ceilTo(encH, 16);
           const frameCount = frames.length;
+          assertConvertDurationBudget(frameCount, padW, padH, zipBuffer.length);
 
           const framesOnDiskBytes = estimateFramesOnDiskBytes(frameCount, padW, padH);
           const willHaveAudio = Boolean(zipSession.audio);
@@ -366,12 +364,14 @@ export async function POST(request) {
             let mp4Buf;
             try {
               mp4Buf = /** @type {Buffer} */ (
-                await runFfmpegImage2Pipe({
+                await runFfmpegRawRgbaPipe({
                   fps,
                   filterComplex,
                   crf,
                   audioPath,
-                  frames: iterateSequencePngs(frames, { encW, encH, padW, padH, fit }),
+                  padW,
+                  padH,
+                  frames: iterateSequenceRgba(frames, { encW, encH, padW, padH, fit }),
                 })
               );
             } catch (e) {
@@ -432,7 +432,7 @@ export async function POST(request) {
           }
         }
       })(),
-      540000
+      780_000
     );
   } catch (e) {
     return toErrorResponse(e);

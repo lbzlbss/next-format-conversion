@@ -4,6 +4,9 @@ import { resolveRightSmallLayout } from './vap-pack.js';
 /** Vercel 函数 /tmp 上限（留余量） */
 export const VERCEL_TMP_BUDGET_BYTES = 480 * 1024 * 1024;
 
+/** 与 route maxDuration / vercel.json 对齐（留 20s 余量） */
+export const CONVERT_DURATION_BUDGET_MS = 780_000;
+
 /** 编码结果主要进内存时的软上限（Hobby 函数约 1GB） */
 export const VAP_MEMORY_BUDGET_BYTES = 820 * 1024 * 1024;
 
@@ -146,6 +149,25 @@ export function assertVercelTmpBudget(estimatedBytes, detail = {}) {
  * @param {number} estimatedBytes
  * @param {Record<string, unknown>} [detail]
  */
+/**
+ * 大任务在 300s 上限下易 FUNCTION_INVOCATION_TIMEOUT，转换前粗算耗时
+ */
+export function assertConvertDurationBudget(frameCount, padW, padH, zipBytes = 0) {
+  const zipMb = zipBytes / (1024 * 1024);
+  const downloadMs = zipMb > 0 ? Math.min(120_000, Math.ceil(zipMb * 2500)) : 30_000;
+  const perFrameMs = Math.max(60, Math.floor((padW * padH) / 12000));
+  const totalMs = downloadMs + frameCount * perFrameMs + 40_000;
+  if (totalMs <= CONVERT_DURATION_BUDGET_MS) return totalMs;
+  const sec = Math.ceil(totalMs / 1000);
+  const limitSec = Math.floor(CONVERT_DURATION_BUDGET_MS / 1000);
+  throw new ApiError(
+    'TIMEOUT',
+    `预计处理约 ${sec} 秒，超过单次上限（约 ${limitSec} 秒）。请减少帧数、填写更小宽/高（如 720）、降低 fps，或拆成多个 ZIP。`,
+    408,
+    { frameCount, padW, padH, zipBytes, estimatedSec: sec, limitSec },
+  );
+}
+
 export function assertSvgaMemoryBudget(estimatedBytes, detail = {}) {
   const limit = 700 * 1024 * 1024;
   if (estimatedBytes <= limit) return;

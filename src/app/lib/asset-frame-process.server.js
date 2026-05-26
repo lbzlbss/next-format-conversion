@@ -31,8 +31,48 @@ export async function processSequenceFrameToPng(buf, opts) {
         bottom: Math.max(0, padH - encH),
         background: { r: 0, g: 0, b: 0, alpha: 0 },
       })
-      .png()
+      .png({ compressionLevel: 1, effort: 1 })
       .toBuffer();
+  } catch (e) {
+    const msg = String(e?.message || e);
+    if (/unsupported image|input buffer/i.test(msg)) {
+      throw new ApiError('INVALID_FORMAT', unsupportedFrameUserMessage(frameName), 400, {
+        frame: frameName,
+      });
+    }
+    throw e;
+  }
+}
+
+/**
+ * 单帧 RGBA 原始像素（供 ffmpeg rawvideo pipe，比 PNG 快很多）
+ * @param {Buffer} buf
+ * @param {{ encW: number, encH: number, padW: number, padH: number, fit: string, frameName?: string }} opts
+ */
+export async function processSequenceFrameToRgba(buf, opts) {
+  const { encW, encH, padW, padH, fit, frameName = 'frame' } = opts;
+  const resizeOpt = fitToSharp(fit);
+  try {
+    const { data, info } = await sharp(buf, { failOn: 'none' })
+      .ensureAlpha()
+      .resize(encW, encH, {
+        ...resizeOpt,
+        background: { r: 0, g: 0, b: 0, alpha: 0 },
+      })
+      .extend({
+        top: 0,
+        left: 0,
+        right: Math.max(0, padW - encW),
+        bottom: Math.max(0, padH - encH),
+        background: { r: 0, g: 0, b: 0, alpha: 0 },
+      })
+      .raw()
+      .toBuffer({ resolveWithObject: true });
+
+    if (info.width !== padW || info.height !== padH || info.channels !== 4) {
+      throw new Error(`帧尺寸异常 ${info.width}x${info.height} ch=${info.channels}`);
+    }
+    return data;
   } catch (e) {
     const msg = String(e?.message || e);
     if (/unsupported image|input buffer/i.test(msg)) {

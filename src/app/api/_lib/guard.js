@@ -32,6 +32,14 @@ export function toErrorResponse(error) {
     return jsonError(error.code, error.message, error.status, error.detail);
   }
   const raw = String(error?.message || error || '');
+  if (/function_invocation_timeout|deployment.*timeout|timed out/i.test(raw)) {
+    return jsonError(
+      'TIMEOUT',
+      '转换超时（平台单次执行时间已达上限）。请减少帧数、填写更小宽/高（如 720）、降低 fps，或拆成多个 ZIP 后分批转换。',
+      408,
+      { hint: 'vercel_function_timeout' },
+    );
+  }
   if (/enospc|no space left on device/i.test(raw)) {
     return jsonError(
       'DISK_FULL',
