@@ -3,18 +3,19 @@ import { spawn } from 'child_process';
 import { requireFfmpegBin } from './ffmpeg-path.server.js';
 
 /**
- * 经 stdin 喂 PNG 序列，避免在 /tmp 落盘全部帧
  * @param {{
  *   fps: number,
  *   filterComplex: string,
- *   outMp4: string,
  *   crf?: number,
  *   audioPath?: string | null,
  *   frames: AsyncIterable<Buffer> | Iterable<Buffer>,
+ *   outMp4?: string,
  * }} opts
+ * @returns {Promise<Buffer | void>}
  */
 export function runFfmpegImage2Pipe(opts) {
-  const { fps, filterComplex, outMp4, crf = 18, audioPath = null, frames } = opts;
+  const { fps, filterComplex, crf = 18, audioPath = null, frames, outMp4 } = opts;
+  const toBuffer = !outMp4;
   const ffmpegBin = requireFfmpegBin();
 
   const args = [
@@ -29,12 +30,7 @@ export function runFfmpegImage2Pipe(opts) {
     'pipe:0',
   ];
   if (audioPath) args.push('-i', audioPath);
-  args.push(
-    '-filter_complex',
-    filterComplex,
-    '-map',
-    '[v]',
-  );
+  args.push('-filter_complex', filterComplex, '-map', '[v]');
   if (audioPath) {
     args.push('-map', '1:a:0?', '-shortest');
   }
@@ -59,20 +55,39 @@ export function runFfmpegImage2Pipe(opts) {
   if (audioPath) {
     args.push('-c:a', 'aac', '-b:a', '128k');
   }
-  args.push('-movflags', '+faststart', outMp4);
+
+  if (toBuffer) {
+    // 不写 /tmp：避免 +faststart 二次落盘导致 ENOSPC
+    args.push('-f', 'mp4', '-movflags', 'frag_keyframe+empty_moov+default_base_moof', 'pipe:1');
+  } else {
+    args.push('-movflags', '+faststart', outMp4);
+  }
 
   return new Promise((resolve, reject) => {
-    const proc = spawn(ffmpegBin, args, { stdio: ['pipe', 'ignore', 'pipe'] });
+    const proc = spawn(ffmpegBin, args, {
+      stdio: ['pipe', toBuffer ? 'pipe' : 'ignore', 'pipe'],
+    });
     let stderr = '';
+    /** @type {Buffer[]} */
+    const stdoutChunks = [];
 
     proc.stderr.on('data', (chunk) => {
       stderr += chunk.toString();
     });
+    if (toBuffer) {
+      proc.stdout.on('data', (chunk) => {
+        stdoutChunks.push(Buffer.from(chunk));
+      });
+    }
 
     proc.on('error', reject);
     proc.on('close', (code) => {
-      if (code === 0) resolve();
-      else reject(new Error(`ffmpeg 退出码 ${code}\nffmpeg stderr:\n${stderr}`));
+      if (code !== 0) {
+        reject(new Error(`ffmpeg 退出码 ${code}\nffmpeg stderr:\n${stderr}`));
+        return;
+      }
+      if (toBuffer) resolve(Buffer.concat(stdoutChunks));
+      else resolve();
     });
 
     const writeChunk = (buf) =>

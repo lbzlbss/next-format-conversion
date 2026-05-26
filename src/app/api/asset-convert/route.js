@@ -10,9 +10,12 @@ import { ApiError, LIMITS, assertFile, assertMaxFrames, toErrorResponse, withTim
 import { processSequenceFrameToPng } from '../../lib/asset-frame-process.server.js';
 import {
   assertSvgaMemoryBudget,
+  assertVapFrameCount,
+  assertVapMemoryBudget,
   assertVercelTmpBudget,
   estimateFramesOnDiskBytes,
   estimateSvgaMemoryBytes,
+  estimateVapMemoryBytes,
   estimateVapTmpBytes,
 } from '../../lib/asset-tmp-budget.server.js';
 import { deleteAssetBlobQuietly, purgeAssetBlobs } from '../../lib/blob-cleanup.server.js';
@@ -253,7 +256,8 @@ export async function POST(request) {
         if (!['right', 'right-small', 'bottom'].includes(pack)) {
           throw new ApiError('INVALID_FORMAT', 'pack 仅支持 right | right-small | bottom', 400);
         }
-        const tmpDir = await fsp.mkdtemp(path.join(os.tmpdir(), `asset_zip_${randomUUID()}_`));
+        /** @type {string | null} */
+        let tmpDir = null;
         let audioPath = null;
 
         let zipSession = null;
@@ -295,6 +299,7 @@ export async function POST(request) {
           const frameCount = frames.length;
 
           const framesOnDiskBytes = estimateFramesOnDiskBytes(frameCount, padW, padH);
+          const willHaveAudio = Boolean(zipSession.audio);
           if (outFormat === 'svga') {
             assertSvgaMemoryBudget(estimateSvgaMemoryBytes(frameCount, padW, padH), {
               frameCount,
@@ -302,13 +307,20 @@ export async function POST(request) {
               padH,
             });
           } else {
-            assertVercelTmpBudget(estimateVapTmpBytes(frameCount, padW, padH, pack), {
+            assertVapFrameCount(frameCount, padW, padH, pack);
+            assertVapMemoryBudget(estimateVapMemoryBytes(frameCount, padW, padH, pack), {
+              frameCount,
+              padW,
+              padH,
+              pack,
+            });
+            assertVercelTmpBudget(estimateVapTmpBytes(frameCount, padW, padH, pack, willHaveAudio), {
               frameCount,
               padW,
               padH,
               pack,
               framesOnDiskBytes,
-              mode: 'image2pipe',
+              mode: 'image2pipe+stdout',
             });
           }
 
@@ -322,6 +334,7 @@ export async function POST(request) {
                 413,
               );
             }
+            tmpDir = await fsp.mkdtemp(path.join(os.tmpdir(), `asset_zip_${randomUUID()}_`));
             const audioExt = path.extname(zipSession.audio.name) || '.mp3';
             audioPath = path.join(tmpDir, `bundled_audio${audioExt}`);
             await fsp.writeFile(audioPath, audioBuf);
@@ -347,20 +360,32 @@ export async function POST(request) {
             });
           }
 
-          // vap：经 stdin 管道喂帧，不在 /tmp 落盘全部 PNG
-          const outMp4 = path.join(tmpDir, 'out.mp4');
+          // vap：stdin 喂帧 + stdout 收 MP4，避免 /tmp 落盘 PNG 与 faststart 二次写盘
           const filterComplex = buildVapPackFilterComplex({ pack, padW, padH, encH });
 
-          await runFfmpegImage2Pipe({
-            fps,
-            filterComplex,
-            outMp4,
-            crf,
-            audioPath,
-            frames: iterateSequencePngs(frames, { encW, encH, padW, padH, fit }),
-          });
-
-          const mp4Buf = await fsp.readFile(outMp4);
+          let mp4Buf;
+          try {
+            mp4Buf = /** @type {Buffer} */ (
+              await runFfmpegImage2Pipe({
+                fps,
+                filterComplex,
+                crf,
+                audioPath,
+                frames: iterateSequencePngs(frames, { encW, encH, padW, padH, fit }),
+              })
+            );
+          } catch (e) {
+            const raw = String(e?.message || e);
+            if (/enospc|no space left/i.test(raw)) {
+              throw new ApiError(
+                'DISK_FULL',
+                `服务端 /tmp 已满（约 512MB）。当前 ${frameCount} 帧、约 ${padW}×${padH}，请减帧/降分辨率或拆 ZIP。`,
+                507,
+                { frameCount, padW, padH, pack, vercel_tmp_limit_mb: 512 },
+              );
+            }
+            throw e;
+          }
           const vapc = buildVapcFromSequence({
             encW,
             encH,
@@ -387,9 +412,11 @@ export async function POST(request) {
           } catch {
             /* ignore */
           }
-          try {
-            await fsp.rm(tmpDir, { recursive: true, force: true });
-          } catch (_) {}
+          if (tmpDir) {
+            try {
+              await fsp.rm(tmpDir, { recursive: true, force: true });
+            } catch (_) {}
+          }
         }
         } finally {
           if (sourceBlobUrl) {
