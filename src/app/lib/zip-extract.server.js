@@ -8,6 +8,7 @@ import { isSupportedSequenceFrame, unsupportedFrameUserMessage } from './image-s
 import { detectArchiveKind, findZipMagicOffset, invalidZipUserMessage } from './zip-sniff.js';
 
 const SUPPORTED_IMAGE_EXTS = new Set(['.png', '.jpg', '.jpeg', '.webp', '.gif']);
+const AUDIO_EXTS = new Set(['.mp3', '.m4a', '.aac', '.wav', '.ogg', '.flac']);
 
 /** macOS / Windows 压缩包常见垃圾条目 */
 function shouldSkipZipEntry(fileName) {
@@ -120,9 +121,10 @@ function readEntryToBuffer(zipfile, entry) {
   });
 }
 
-function listImageEntries(zipfile) {
+function listImageAndAudioEntries(zipfile) {
   return new Promise((resolve, reject) => {
     const entries = [];
+    let audioEntry = null;
     zipfile.readEntry();
     zipfile.on('entry', (entry) => {
       if (/\/$/.test(entry.fileName) || shouldSkipZipEntry(entry.fileName)) {
@@ -130,6 +132,11 @@ function listImageEntries(zipfile) {
         return;
       }
       const ext = path.extname(entry.fileName).toLowerCase();
+      if (AUDIO_EXTS.has(ext)) {
+        if (!audioEntry) audioEntry = entry;
+        zipfile.readEntry();
+        return;
+      }
       if (!SUPPORTED_IMAGE_EXTS.has(ext)) {
         zipfile.readEntry();
         return;
@@ -141,7 +148,7 @@ function listImageEntries(zipfile) {
       entries.sort((a, b) =>
         cmpNatural(path.basename(a.fileName), path.basename(b.fileName)),
       );
-      resolve(entries);
+      resolve({ entries, audioEntry });
     });
     zipfile.on('error', reject);
   });
@@ -151,7 +158,7 @@ function listImageEntries(zipfile) {
  * 使用 yauzl 解压序列帧（支持 ZIP64 / 大文件，避免 JSZip 中央目录错误）
  * @param {Buffer} zipBuffer
  * @param {string} [_workDir] 保留参数以兼容调用方；不再将整包写入磁盘
- * @returns {Promise<{ frames: Array<{ name: string, readBuffer: () => Promise<Buffer> }>, dispose: () => Promise<void> }>}
+ * @returns {Promise<{ frames: Array<{ name: string, readBuffer: () => Promise<Buffer> }>, audio: { name: string, readBuffer: () => Promise<Buffer> } | null, dispose: () => Promise<void> }>}
  */
 export async function extractZipImageFrames(zipBuffer, _workDir) {
   validateZipBuffer(zipBuffer);
@@ -164,7 +171,7 @@ export async function extractZipImageFrames(zipBuffer, _workDir) {
   let zipfile;
   try {
     zipfile = await openZipFromBuffer(sourceBuf);
-    const entries = await listImageEntries(zipfile);
+    const { entries, audioEntry } = await listImageAndAudioEntries(zipfile);
     if (entries.length === 0) {
       throw new ApiError(
         'INVALID_FORMAT',
@@ -185,6 +192,12 @@ export async function extractZipImageFrames(zipBuffer, _workDir) {
           return buf;
         },
       })),
+      audio: audioEntry
+        ? {
+            name: audioEntry.fileName,
+            readBuffer: () => readEntryToBuffer(zipfile, audioEntry),
+          }
+        : null,
       async dispose() {
         await new Promise((resolve) => {
           try {

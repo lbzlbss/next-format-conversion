@@ -12,7 +12,6 @@ import sharp from 'sharp';
 import { ApiError, LIMITS, assertFile, assertMaxFrames, toErrorResponse, withTimeout } from '../_lib/guard';
 import { deleteAssetBlobQuietly, purgeAssetBlobs } from '../../lib/blob-cleanup.server.js';
 import { downloadBlobZipBuffer } from '../../lib/blob-download.server.js';
-import { downloadBlobBuffer } from '../../lib/blob-download.server.js';
 import { validateZipBuffer } from '../../lib/zip-extract.server.js';
 import { unsupportedFrameUserMessage } from '../../lib/image-sniff.js';
 import { extractZipImageFrames } from '../../lib/zip-extract.server.js';
@@ -227,10 +226,6 @@ function parseInputPayload(contentType, formData, jsonBody) {
     return {
       file: null,
       blobUrl: String(jsonBody?.blobUrl || '').trim(),
-      audioFile: null,
-      audioUrl: String(jsonBody?.audioUrl || '').trim(),
-      audioExpectedBytes: parsePositiveInt(jsonBody?.audioExpectedBytes),
-      audioName: String(jsonBody?.audioName || ''),
       outFormat: String(jsonBody?.format || 'vap').toLowerCase(),
       fps: parsePositiveInt(jsonBody?.fps) ?? 30,
       fit: String(jsonBody?.fit || 'contain').toLowerCase(),
@@ -246,10 +241,6 @@ function parseInputPayload(contentType, formData, jsonBody) {
   return {
     file: formData?.get('file'),
     blobUrl: String(formData?.get('blobUrl') || '').trim(),
-    audioFile: formData?.get('audio'),
-    audioUrl: String(formData?.get('audioUrl') || '').trim(),
-    audioExpectedBytes: parsePositiveInt(formData?.get('audioExpectedBytes')),
-    audioName: String(formData?.get('audioName') || ''),
     outFormat: String(formData?.get('format') || 'vap').toLowerCase(),
     fps: parsePositiveInt(formData?.get('fps')) ?? 30,
     fit: String(formData?.get('fit') || 'contain').toLowerCase(),
@@ -284,9 +275,6 @@ export async function POST(request) {
         const {
           file,
           blobUrl,
-          audioFile,
-          audioUrl,
-          audioExpectedBytes,
           outFormat,
           fps,
           fit,
@@ -451,25 +439,19 @@ export async function POST(request) {
             await fsp.writeFile(outPngPath, pngBuf);
           }
 
-          // optional audio
-          if (audioUrl) {
-            if ((audioExpectedBytes || 0) > AUDIO_MAX_BYTES) {
-              throw new ApiError('FILE_TOO_LARGE', `音频过大，上限 ${(AUDIO_MAX_BYTES / 1024 / 1024).toFixed(0)}MB`, 413);
+          // 压缩包内可选音频（mp3/m4a/aac/wav 等，取第一个）
+          if (zipSession.audio) {
+            const audioBuf = await zipSession.audio.readBuffer();
+            if (audioBuf.length > AUDIO_MAX_BYTES) {
+              throw new ApiError(
+                'FILE_TOO_LARGE',
+                `压缩包内音频过大（${zipSession.audio.name}），上限 ${(AUDIO_MAX_BYTES / 1024 / 1024).toFixed(0)}MB`,
+                413,
+              );
             }
-            const buf = await downloadBlobBuffer(audioUrl, audioExpectedBytes || null, (url, timeoutMs) =>
-              fetchWithTimeout(url, timeoutMs),
-            );
-            if (buf.length > AUDIO_MAX_BYTES) {
-              throw new ApiError('FILE_TOO_LARGE', `音频过大，上限 ${(AUDIO_MAX_BYTES / 1024 / 1024).toFixed(0)}MB`, 413);
-            }
-            audioPath = path.join(tmpDir, 'audio.bin');
-            await fsp.writeFile(audioPath, buf);
-          } else if (audioFile && typeof audioFile.arrayBuffer === 'function' && audioFile.size > 0) {
-            if (audioFile.size > AUDIO_MAX_BYTES) {
-              throw new ApiError('FILE_TOO_LARGE', `音频过大，上限 ${(AUDIO_MAX_BYTES / 1024 / 1024).toFixed(0)}MB`, 413);
-            }
-            audioPath = path.join(tmpDir, 'audio.bin');
-            await fsp.writeFile(audioPath, Buffer.from(await audioFile.arrayBuffer()));
+            const audioExt = path.extname(zipSession.audio.name) || '.mp3';
+            audioPath = path.join(tmpDir, `bundled_audio${audioExt}`);
+            await fsp.writeFile(audioPath, audioBuf);
           }
 
           const outStem = String(inputName || 'asset').replace(/\.zip$/i, '');

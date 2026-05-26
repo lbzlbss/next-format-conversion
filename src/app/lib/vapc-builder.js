@@ -13,6 +13,7 @@
  *   frameCount?: number,
  *   pack?: 'right' | 'bottom' | 'right-small',
  *   alphaW?: number,
+ *   aFrameX?: number,
  * }} opts
  */
 export function buildVapcPayload(opts) {
@@ -25,9 +26,16 @@ export function buildVapcPayload(opts) {
   const frameCount = Math.max(1, Math.floor(opts.frameCount ?? fps));
 
   const rgbFrame = [0, 0, w, h];
-  /** 左右拼接：Alpha 紧贴 RGB 右侧（x=w），与腾讯 VapTool 一致 */
+  /** 左右等宽：Alpha 在 x=w；左大右小：Alpha 在视频坐标 x=aFrameX，宽度 alphaW */
   const alphaW = Math.max(1, Math.floor(opts.alphaW ?? w));
-  const aFrame = pack === 'bottom' ? [0, h, w, h] : [w, 0, alphaW, h];
+  const aFrameX = Math.max(0, Math.floor(opts.aFrameX ?? w));
+  const aFrame =
+    pack === 'bottom'
+      ? [0, h, w, h]
+      : pack === 'right-small'
+        ? [aFrameX, 0, alphaW, h]
+        : [w, 0, alphaW, h];
+  const alphaScale = pack === 'right-small' ? Number((alphaW / w).toFixed(4)) : 1;
 
   return {
     info: {
@@ -40,7 +48,7 @@ export function buildVapcPayload(opts) {
       orien: 0,
       fps,
       isVapx: 0,
-      alpha: 1,
+      alpha: alphaScale,
       isAlignBothEnds: 0,
       rgbFrame,
       aFrame,
@@ -66,7 +74,8 @@ export function buildVapcFromSequence(p) {
     fps,
     frameCount,
     pack,
-    alphaW: pack === 'right-small' ? alphaPlaneW : undefined,
+    alphaW: pack === 'right-small' ? alphaPlaneW : padW,
+    aFrameX: pack === 'right-small' ? padW : encW,
   });
 }
 
