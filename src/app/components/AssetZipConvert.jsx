@@ -199,6 +199,7 @@ export default function AssetZipConvert() {
     setLoading(true);
     /** @type {string | null} */
     let stagedBlobUrl = null;
+    let reachedConvert = false;
     try {
       await assertLocalZipFile(f);
 
@@ -239,13 +240,16 @@ export default function AssetZipConvert() {
         };
 
         savePendingTask(payload);
+        reachedConvert = true;
         await runConvertRequest(payload, f.name);
       }
       message.success('已生成并开始下载');
     } catch (e) {
-      clearPendingTask();
-      if (stagedBlobUrl) {
-        await releaseTempBlob(stagedBlobUrl).catch(() => {});
+      if (!reachedConvert) {
+        clearPendingTask();
+        if (stagedBlobUrl) {
+          await releaseTempBlob(stagedBlobUrl).catch(() => {});
+        }
       }
       const errMsg = e?.message || '转换失败';
       if (/storage quota|BLOB_QUOTA|quota exceeded/i.test(errMsg)) {
@@ -258,6 +262,8 @@ export default function AssetZipConvert() {
           `上传失败：${errMsg}。大于 ${formatBytes(BLOB_MULTIPART_THRESHOLD_BYTES)} 将走 Blob 分片；单文件上限 ${formatBytes(ASSET_ZIP_MAX_BYTES)}。`,
           8,
         );
+      } else if (reachedConvert) {
+        message.error(`${errMsg}。可点击「继续转换」重试（无需重新上传）`, 12);
       } else {
         message.error(errMsg);
       }
@@ -278,11 +284,7 @@ export default function AssetZipConvert() {
       await runConvertRequest(pendingTask, pendingTask.filename);
       message.success('已恢复并完成下载');
     } catch (e) {
-      clearPendingTask();
-      if (resumeUrl) {
-        await releaseTempBlob(resumeUrl).catch(() => {});
-      }
-      message.error(e?.message || '恢复任务失败（云端临时文件已尝试释放）');
+      message.error(e?.message || '恢复任务失败。若提示 Blob 404 请重新上传 ZIP', 10);
     } finally {
       setStage('idle');
       setLoading(false);

@@ -4,6 +4,15 @@ import { validateZipBuffer } from './zip-extract.server.js';
 
 const VERCEL_BLOB_HOST_RE = /(?:^|\.)((?:public\.)?blob\.vercel-storage\.com|vercel-storage\.com)$/i;
 
+/** @param {number} status */
+function blobFetchFailedError(status) {
+  const hint =
+    status === 404
+      ? '临时 ZIP 不存在或已被清理。转换失败时 Blob 会保留可重试；若仍 404 请重新上传 ZIP'
+      : `下载 Blob 失败 (${status})`;
+  return new ApiError('BLOB_FETCH_FAILED', hint, 502, { status });
+}
+
 /**
  * Vercel Blob 的 url 可能是预览页；downloadUrl / ?download=1 才保证原始字节流
  * @param {string} blobUrl
@@ -67,7 +76,7 @@ export async function downloadBlobZipBuffer(blobUrl, expectedBytes, fetcher) {
 
   const res = await fetcher(downloadUrl, timeoutMs);
   if (!res.ok) {
-    throw new ApiError('BLOB_FETCH_FAILED', `下载 Blob 失败 (${res.status})`, 502);
+    throw blobFetchFailedError(res.status);
   }
 
   const ct = String(res.headers.get('content-type') || '').toLowerCase();
@@ -100,7 +109,7 @@ export async function downloadBlobBuffer(blobUrl, expectedBytes, fetcher) {
 
   const res = await fetcher(downloadUrl, timeoutMs);
   if (!res.ok) {
-    throw new ApiError('BLOB_FETCH_FAILED', `下载 Blob 失败 (${res.status})`, 502);
+    throw blobFetchFailedError(res.status);
   }
 
   const ct = String(res.headers.get('content-type') || '').toLowerCase();

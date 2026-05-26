@@ -75,14 +75,33 @@ export function assertVapFrameCount(frameCount, padW, padH, pack) {
  * @param {number} estimatedBytes
  * @param {Record<string, unknown>} [detail]
  */
-export function assertVapMemoryBudget(estimatedBytes, detail = {}) {
-  if (estimatedBytes <= VAP_MEMORY_BUDGET_BYTES) return;
-  const needMb = (estimatedBytes / 1024 / 1024).toFixed(0);
+/**
+ * @param {number} estimatedBytes
+ * @param {number} [zipBytes]
+ */
+export function effectiveVapMemoryBudget(zipBytes = 0) {
+  const zipMb = zipBytes / (1024 * 1024);
+  if (zipMb >= 100) return 520 * 1024 * 1024;
+  if (zipMb >= 70) return 620 * 1024 * 1024;
+  return VAP_MEMORY_BUDGET_BYTES;
+}
+
+/**
+ * @param {number} estimatedBytes
+ * @param {Record<string, unknown>} [detail]
+ * @param {number} [zipBytes]
+ */
+export function assertVapMemoryBudget(estimatedBytes, detail = {}, zipBytes = 0) {
+  const limit = effectiveVapMemoryBudget(zipBytes);
+  const total = estimatedBytes + Math.max(0, zipBytes);
+  if (total <= limit) return;
+  const needMb = (total / 1024 / 1024).toFixed(0);
+  const zipMb = (zipBytes / 1024 / 1024).toFixed(0);
   throw new ApiError(
     'FILE_TOO_LARGE',
-    `预计生成文件约 ${needMb}MB，超过单次转换内存预算。请减少帧数、降低分辨率，或改用更小 ZIP。`,
+    `预计内存占用约 ${needMb}MB（含 ZIP ${zipMb}MB），超过单次转换上限。请减少帧数、在页面填写更小的宽/高，或拆成多个 ZIP。`,
     413,
-    detail,
+    { ...detail, zipBytes, memoryLimitBytes: limit },
   );
 }
 

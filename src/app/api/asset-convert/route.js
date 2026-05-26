@@ -308,12 +308,11 @@ export async function POST(request) {
             });
           } else {
             assertVapFrameCount(frameCount, padW, padH, pack);
-            assertVapMemoryBudget(estimateVapMemoryBytes(frameCount, padW, padH, pack), {
-              frameCount,
-              padW,
-              padH,
-              pack,
-            });
+            assertVapMemoryBudget(
+              estimateVapMemoryBytes(frameCount, padW, padH, pack),
+              { frameCount, padW, padH, pack, zipBytes: zipBuffer.length },
+              zipBuffer.length,
+            );
             assertVercelTmpBudget(estimateVapTmpBytes(frameCount, padW, padH, pack, willHaveAudio), {
               frameCount,
               padW,
@@ -341,6 +340,9 @@ export async function POST(request) {
           }
 
           const outStem = String(inputName || 'asset').replace(/\.zip$/i, '');
+          /** @type {NextResponse} */
+          let successResponse;
+
           if (outFormat === 'svga') {
             const svgaBuf = await buildSvgaFromZipFrames(frames, {
               fps,
@@ -352,60 +354,72 @@ export async function POST(request) {
               padH,
               fit,
             });
-            return new NextResponse(svgaBuf, {
+            successResponse = new NextResponse(svgaBuf, {
               headers: {
                 'Content-Type': 'application/octet-stream',
                 'Content-Disposition': `attachment; filename="${encodeURIComponent(`${outStem}_${encW}x${encH}_${fps}.svga`)}"`,
               },
             });
-          }
+          } else {
+            // vap：stdin 喂帧 + stdout 收 MP4，避免 /tmp 落盘 PNG 与 faststart 二次写盘
+            const filterComplex = buildVapPackFilterComplex({ pack, padW, padH, encH });
 
-          // vap：stdin 喂帧 + stdout 收 MP4，避免 /tmp 落盘 PNG 与 faststart 二次写盘
-          const filterComplex = buildVapPackFilterComplex({ pack, padW, padH, encH });
-
-          let mp4Buf;
-          try {
-            mp4Buf = /** @type {Buffer} */ (
-              await runFfmpegImage2Pipe({
-                fps,
-                filterComplex,
-                crf,
-                audioPath,
-                frames: iterateSequencePngs(frames, { encW, encH, padW, padH, fit }),
-              })
-            );
-          } catch (e) {
-            const raw = String(e?.message || e);
-            if (/enospc|no space left/i.test(raw)) {
-              throw new ApiError(
-                'DISK_FULL',
-                `服务端 /tmp 已满（约 512MB）。当前 ${frameCount} 帧、约 ${padW}×${padH}，请减帧/降分辨率或拆 ZIP。`,
-                507,
-                { frameCount, padW, padH, pack, vercel_tmp_limit_mb: 512 },
+            let mp4Buf;
+            try {
+              mp4Buf = /** @type {Buffer} */ (
+                await runFfmpegImage2Pipe({
+                  fps,
+                  filterComplex,
+                  crf,
+                  audioPath,
+                  frames: iterateSequencePngs(frames, { encW, encH, padW, padH, fit }),
+                })
               );
+            } catch (e) {
+              const raw = String(e?.message || e);
+              if (/enospc|no space left/i.test(raw)) {
+                throw new ApiError(
+                  'DISK_FULL',
+                  `服务端 /tmp 已满（约 512MB）。当前 ${frameCount} 帧、约 ${padW}×${padH}、ZIP ${(zipBuffer.length / 1024 / 1024).toFixed(0)}MB。请填写更小的宽/高、减帧或拆 ZIP。`,
+                  507,
+                  {
+                    frameCount,
+                    padW,
+                    padH,
+                    pack,
+                    zipBytes: zipBuffer.length,
+                    vercel_tmp_limit_mb: 512,
+                  },
+                );
+              }
+              throw e;
             }
-            throw e;
-          }
-          const vapc = buildVapcFromSequence({
-            encW,
-            encH,
-            padW,
-            padH,
-            fps,
-            frameCount: frames.length,
-            pack,
-            alphaW: pack === 'right-small' ? toEven(Math.ceil(padW / 2)) : undefined,
-          });
-          const vapBuf = rebuildWithVapc(mp4Buf, vapc);
-          const vapcB64 = Buffer.from(JSON.stringify(vapc), 'utf8').toString('base64');
+            const vapc = buildVapcFromSequence({
+              encW,
+              encH,
+              padW,
+              padH,
+              fps,
+              frameCount: frames.length,
+              pack,
+              alphaW: pack === 'right-small' ? toEven(Math.ceil(padW / 2)) : undefined,
+            });
+            const vapBuf = rebuildWithVapc(mp4Buf, vapc);
+            const vapcB64 = Buffer.from(JSON.stringify(vapc), 'utf8').toString('base64');
 
-          return new NextResponse(vapBuf, {
-            headers: {
-              'Content-Type': 'application/octet-stream',
-              'Content-Disposition': `attachment; filename="${encodeURIComponent(`${outStem}_${encW}x${encH}_${fps}.vap`)}"`,
-              'X-Vapc-Config': vapcB64,
-            },
-          });
+            successResponse = new NextResponse(vapBuf, {
+              headers: {
+                'Content-Type': 'application/octet-stream',
+                'Content-Disposition': `attachment; filename="${encodeURIComponent(`${outStem}_${encW}x${encH}_${fps}.vap`)}"`,
+                'X-Vapc-Config': vapcB64,
+              },
+            });
+          }
+
+          if (sourceBlobUrl) {
+            await deleteAssetBlobQuietly(sourceBlobUrl);
+          }
+          return successResponse;
         } finally {
           try {
             await zipSession?.dispose?.();
@@ -418,10 +432,6 @@ export async function POST(request) {
             } catch (_) {}
           }
         }
-        } finally {
-          if (sourceBlobUrl) {
-            await deleteAssetBlobQuietly(sourceBlobUrl);
-          }
         }
       })(),
       540000

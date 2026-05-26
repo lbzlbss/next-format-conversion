@@ -1,4 +1,10 @@
 {
+  "functions": {
+    "src/app/api/asset-convert/route.js": {
+      "maxDuration": 300,
+      "memory": 3009
+    }
+  },
   "crons": [
     {
       "path": "/api/blob/cleanup?maxAgeHours=2",

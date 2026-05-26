@@ -51,6 +51,8 @@ export function runFfmpegImage2Pipe(opts) {
     '0',
     '-pix_fmt',
     'yuv420p',
+    '-x264-params',
+    'rc-lookahead=0:ref=2:sync-lookahead=0',
   );
   if (audioPath) {
     args.push('-c:a', 'aac', '-b:a', '128k');
