@@ -19,6 +19,15 @@ import { buildVapPackFilterComplex } from '../../lib/vap-pack.js';
 import { buildVapcFromSequence } from '../../lib/vapc-builder.js';
 import { rebuildWithVapc } from '../../lib/vap-mp4.server.js';
 import { AUDIO_MAX_BYTES } from '../../lib/upload-limits.js';
+import {
+  assertConvertDurationBudget,
+  assertVapFrameCount,
+  assertVapMemoryBudget,
+  assertVercelTmpBudget,
+  estimateFramesOnDiskBytes,
+  estimateVapMemoryBytes,
+  estimateVapPackedVideoSize,
+} from '../../lib/asset-tmp-budget.server.js';
 
 const _require = createRequire(import.meta.url);
 export const maxDuration = 300;
@@ -399,6 +408,26 @@ export async function POST(request) {
           const encH = toEven(targetH);
           const padW = ceilTo(encW, 16);
           const padH = ceilTo(encH, 16);
+
+          const zipBytes = zipBuffer?.length ?? 0;
+          assertConvertDurationBudget(frames.length, padW, padH, zipBytes);
+          if (outFormat === 'vap') {
+            assertVapFrameCount(frames.length, padW, padH, pack);
+            const framesOnDiskBytes = estimateFramesOnDiskBytes(frames.length, padW, padH);
+            const { bytes: outMp4Est } = estimateVapPackedVideoSize(frames.length, padW, padH, pack);
+            assertVercelTmpBudget(framesOnDiskBytes + outMp4Est + 32 * 1024 * 1024, {
+              frameCount: frames.length,
+              padW,
+              padH,
+              pack,
+              framesOnDiskBytes,
+            });
+            assertVapMemoryBudget(
+              estimateVapMemoryBytes(frames.length, padW, padH, pack),
+              { frameCount: frames.length, padW, padH, pack },
+              zipBytes,
+            );
+          }
 
           const resizeOpt = fitToSharp(fit);
 

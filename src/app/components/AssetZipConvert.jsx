@@ -83,10 +83,30 @@ export default function AssetZipConvert() {
 
   useEffect(() => () => clearPreview(), []);
 
+  const parseConvertError = (resp, err) => {
+    const status = resp.status;
+    const code = err?.code;
+    const detail = err?.detail;
+    if (code && code !== '500' && err?.message) {
+      return err.message;
+    }
+    if (status === 504 || status === 408 || code === 'TIMEOUT') {
+      return (
+        detail?.hint === 'vercel_function_timeout' || status === 504
+          ? '转换超时（Vercel 单次执行上限约 300 秒）。请减少帧数、填写更小宽/高（如 720）、降低 fps，或拆成多个 ZIP 分批转换。'
+          : err?.message || '转换超时，请减小任务后重试。'
+      );
+    }
+    if (status >= 500 && (err?.id || String(err?.message || '').includes('Internal Server Error'))) {
+      return '服务端处理失败或已超时（平台可能返回通用 500）。请减小 ZIP/帧数/分辨率后重试；大文件（>100MB）务必填写宽/高。';
+    }
+    return err?.message || err?.error || `转换失败 (${status})`;
+  };
+
   const finishConvertResponse = async (resp, fallbackFileName, outFormat) => {
     if (!resp.ok) {
       const err = await resp.json().catch(() => null);
-      throw new Error(err?.message || err?.error || `转换失败 (${resp.status})`);
+      throw new Error(parseConvertError(resp, err));
     }
 
     const blob = await resp.blob();
