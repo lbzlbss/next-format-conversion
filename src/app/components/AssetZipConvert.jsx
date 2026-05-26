@@ -352,7 +352,8 @@ export default function AssetZipConvert() {
           <p className='ant-upload-text'>拖拽或点击上传 ZIP（内含序列帧图片）</p>
           <p className='ant-upload-hint'>
             请上传<strong>标准 ZIP</strong>（对「序列帧文件夹」右键压缩，勿含 __MACOSX / ._ 文件，勿用 RAR/7z/分卷）。
-            内含 png/jpg/webp，按文件名排序；mp3/m4a 等需与序列帧放在<strong>同一文件夹</strong>内（同级）才会自动合成。建议 ≤500 帧。
+            内含 png/jpg/webp，按文件名排序；mp3/m4a 等需与序列帧放在<strong>同一文件夹</strong>内（同级）才会自动合成。
+            服务端 /tmp 约 512MB：建议单任务 ≤300 帧，或输出边长 ≤720；过大请降分辨率或拆包。
             小于 {formatBytes(BLOB_MULTIPART_THRESHOLD_BYTES)} 直传转换不占 Blob；更大文件走 Blob 分片（转换后自动删除）。最大{' '}
             {formatBytes(ASSET_ZIP_MAX_BYTES)}。
           </p>

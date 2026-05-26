@@ -35,7 +35,7 @@ export function toErrorResponse(error) {
   if (/enospc|no space left on device/i.test(raw)) {
     return jsonError(
       'DISK_FULL',
-      '服务端临时磁盘已满（平台 /tmp 约 512MB）。请减少序列帧数量、降低分辨率，或拆成多个较小的 ZIP 分批转换。',
+      '服务端临时磁盘已满（平台 /tmp 约 512MB）。请减少序列帧数量、降低输出宽高（建议边长≤720、≤300帧），或拆成多个较小的 ZIP 分批转换。',
       507,
       { hint: 'vercel_tmp_limit_mb: 512' },
     );
