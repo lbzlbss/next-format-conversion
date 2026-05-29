@@ -3,12 +3,17 @@
 import { useCallback, useState } from 'react';
 import { useChatAttachments } from './useChatAttachments.js';
 import { useChatStream } from './useChatStream.js';
-import { CHAT_TOOL_IDS } from '../lib/chat-tools/registry.js';
-import { parseGifConfigFromText } from '../lib/chat-tools/parse-gif-config.js';
+import { CHAT_TOOLS } from '../lib/chat-tools/registry.js';
+import { parseConfigForTool } from '../lib/chat-tools/parse-config.js';
 import {
-  formatGifToWebpToolSummary,
-  runGifToWebp,
-} from '../lib/chat-tools/run-gif-to-webp.js';
+  defaultPromptForTool,
+  resolveChatTool,
+} from '../lib/chat-tools/resolve-tool.js';
+import {
+  formatToolSummary,
+  runChatFileTool,
+  runGenerateImageTool,
+} from '../lib/chat-tools/run-chat-tool.js';
 
 /**
  * @param {Object} options
@@ -19,72 +24,92 @@ export function useChatComposer({ setMessages, chatContext = {} }) {
   const attachmentState = useChatAttachments();
   const stream = useChatStream({ setMessages, chatContext });
   const [toolRunning, setToolRunning] = useState(false);
+  const [preferredToolId, setPreferredToolId] = useState(null);
 
   const send = useCallback(
     async (historyMessages, rawText) => {
       const text = String(rawText || '').trim();
-      const gifAtt = attachmentState.attachments[0] ?? null;
+      const att = attachmentState.attachments[0] ?? null;
 
-      if (!text && !gifAtt) return;
+      if (!text && !att) return;
 
-      const userContent =
-        text || (gifAtt ? `请将附件「${gifAtt.name}」转换为 WebP 并提供下载` : '');
+      const toolId = resolveChatTool({
+        file: att?.file ?? null,
+        text,
+        preferredToolId,
+      });
 
-      if (!gifAtt) {
+      if (!toolId) {
         attachmentState.clearAttachments();
-        await stream.sendMessage(historyMessages, userContent);
+        await stream.sendMessage(historyMessages, text || '你好');
         return;
       }
 
-      const userAttachments = [
-        {
-          id: gifAtt.id,
-          name: gifAtt.name,
-          size: gifAtt.size,
-          previewUrl: gifAtt.previewUrl,
-          kind: 'image/gif',
-        },
-      ];
+      const tool = CHAT_TOOLS[toolId];
+      const userContent = text || (att ? defaultPromptForTool(toolId, att.file) : '');
+
+      if (tool.needsFile && !att) {
+        await stream.sendMessage(historyMessages, `${userContent}\n\n（请先点击 📎 上传对应格式的文件）`);
+        return;
+      }
+
+      const userAttachments = att
+        ? [
+            {
+              id: att.id,
+              name: att.name,
+              size: att.size,
+              previewUrl: att.previewUrl,
+              kind: att.file.type || att.category,
+            },
+          ]
+        : [];
 
       const userMsg = {
         id: `u-${Date.now()}`,
         role: 'user',
         content: userContent,
-        attachments: userAttachments,
+        ...(userAttachments.length ? { attachments: userAttachments } : {}),
       };
       const baseHistory = [...historyMessages, userMsg];
       setMessages(baseHistory);
       attachmentState.clearAttachments();
+      setPreferredToolId(null);
 
-      const config = parseGifConfigFromText(userContent);
       /** @type {import('./useChatStream.js').ToolCall} */
       let toolCall = {
         id: `tc-${Date.now()}`,
-        toolId: CHAT_TOOL_IDS.GIF_TO_WEBP,
+        toolId,
         status: 'running',
-        input: config,
+        input: att ? parseConfigForTool(toolId, userContent) : { prompt: userContent },
       };
 
       setToolRunning(true);
       try {
-        const result = await runGifToWebp(gifAtt.file, config);
+        const result = att
+          ? await runChatFileTool(toolId, att.file, toolCall.input)
+          : await runGenerateImageTool(userContent);
+
         toolCall = {
           ...toolCall,
           status: 'success',
           input: result.config,
           output: {
             downloadUrl: result.downloadUrl,
+            previewUrl: result.previewUrl,
+            imageUrl: result.imageUrl,
             fileName: result.fileName,
             beforeBytes: result.beforeBytes,
             afterBytes: result.afterBytes,
           },
         };
 
-        const apiUserContent = `${userContent}\n\n${formatGifToWebpToolSummary(result)}`;
+        const apiUserContent = `${userContent}\n\n${formatToolSummary(result)}`;
+        const wikiToolKey = CHAT_TOOLS[toolId]?.toolKey ?? chatContext.toolKey ?? null;
 
         await stream.sendMessage(baseHistory, userContent, {
           appendUser: false,
-          toolKey: 'gifToWebp',
+          toolKey: wikiToolKey,
           pendingToolCalls: [toolCall],
           apiUserContent,
         });
@@ -92,7 +117,7 @@ export function useChatComposer({ setMessages, chatContext = {} }) {
         toolCall = {
           ...toolCall,
           status: 'error',
-          error: err?.message || '转换失败',
+          error: err?.message || '工具执行失败',
         };
         setMessages((prev) => [
           ...prev,
@@ -107,7 +132,7 @@ export function useChatComposer({ setMessages, chatContext = {} }) {
         setToolRunning(false);
       }
     },
-    [attachmentState, chatContext, setMessages, stream],
+    [attachmentState, chatContext.toolKey, preferredToolId, setMessages, stream],
   );
 
   return {
@@ -116,5 +141,7 @@ export function useChatComposer({ setMessages, chatContext = {} }) {
     send,
     toolRunning,
     busy: stream.loading || toolRunning,
+    preferredToolId,
+    setPreferredToolId,
   };
 }

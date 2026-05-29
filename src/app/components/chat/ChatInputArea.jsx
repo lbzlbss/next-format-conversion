@@ -5,6 +5,8 @@ import { Button, Input } from 'antd';
 import { SendOutlined, PaperClipOutlined } from '@ant-design/icons';
 import ChatAttachmentBar from './ChatAttachmentBar.jsx';
 import ChatPdfButton from './ChatPdfButton.jsx';
+import ChatToolPicker from './ChatToolPicker.jsx';
+import { CHAT_ACCEPT } from '../../lib/chat-tools/constants.js';
 
 const { TextArea } = Input;
 
@@ -17,6 +19,8 @@ const { TextArea } = Input;
  *   attachments: import('../../hooks/useChatAttachments.js').ChatPendingAttachment[],
  *   onAddFiles: (files: FileList | File[]) => { ok: boolean, error?: string },
  *   onRemoveAttachment: (id: string) => void,
+ *   preferredToolId: string | null,
+ *   onPreferredToolChange: (id: string | null) => void,
  *   messages: Array<Record<string, unknown>>,
  *   showPdf?: boolean,
  *   showFooterHint?: boolean,
@@ -31,12 +35,15 @@ export default function ChatInputArea({
   attachments,
   onAddFiles,
   onRemoveAttachment,
+  preferredToolId,
+  onPreferredToolChange,
   messages,
   showPdf = true,
   showFooterHint = false,
   className = '',
 }) {
   const fileRef = useRef(null);
+  const att = attachments[0] ?? null;
 
   const handlePickFile = () => {
     fileRef.current?.click();
@@ -49,6 +56,7 @@ export default function ChatInputArea({
     if (!result.ok && result.error) {
       window.alert(result.error);
     }
+    onPreferredToolChange(null);
     e.target.value = '';
   };
 
@@ -62,11 +70,17 @@ export default function ChatInputArea({
 
       <ChatAttachmentBar attachments={attachments} onRemove={onRemoveAttachment} />
 
+      <ChatToolPicker
+        attachment={att}
+        preferredToolId={preferredToolId}
+        onChange={onPreferredToolChange}
+      />
+
       <div className="flex gap-2">
         <input
           ref={fileRef}
           type="file"
-          accept="image/gif,.gif"
+          accept={CHAT_ACCEPT}
           className="hidden"
           onChange={handleFileChange}
         />
@@ -76,7 +90,7 @@ export default function ChatInputArea({
           onClick={handlePickFile}
           disabled={busy}
           className="shrink-0 self-end rounded-xl"
-          aria-label="上传 GIF"
+          aria-label="上传附件"
         />
         <TextArea
           value={input}
@@ -87,7 +101,7 @@ export default function ChatInputArea({
               onSend();
             }
           }}
-          placeholder="输入问题；可上传 GIF 一键转 WebP"
+          placeholder="提问、文生图，或上传 GIF/MP4/图片 调用站内工具"
           autoSize={{ minRows: 1, maxRows: 5 }}
           className="min-w-0 flex-1 rounded-xl"
           disabled={busy}
@@ -105,7 +119,7 @@ export default function ChatInputArea({
 
       {showFooterHint ? (
         <div className="mt-2 text-center text-[11px] text-mf-muted">
-          模型：豆包 Seed 2.0 Lite · 支持 GIF→WebP 工具调用
+          支持：GIF↔WebP/MP4/压缩 · MP4压缩/首帧 · 图片压缩 · 文生图 · VAP/SVGA 请用首页工具
         </div>
       ) : null}
     </div>

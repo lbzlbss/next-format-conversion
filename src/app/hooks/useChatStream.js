@@ -9,7 +9,14 @@ import { useCallback, useState } from 'react';
  *   toolId: string,
  *   status: 'pending' | 'running' | 'success' | 'error',
  *   input?: Record<string, unknown>,
- *   output?: { downloadUrl: string, fileName: string, beforeBytes: number, afterBytes: number },
+ *   output?: {
+ *     downloadUrl?: string,
+ *     previewUrl?: string,
+ *     imageUrl?: string,
+ *     fileName: string,
+ *     beforeBytes?: number,
+ *     afterBytes?: number,
+ *   },
  *   error?: string,
  * }} ToolCall
  * @typedef {{
@@ -115,8 +122,6 @@ export function useChatStream({ setMessages, chatContext = {} }) {
       let fullThinking = '';
       /** @type {WikiSource[]} */
       let sources = [];
-
-      const apiText = apiUserContent ?? text;
 
       try {
         /** @type {{ role: string, content: string }[]} */

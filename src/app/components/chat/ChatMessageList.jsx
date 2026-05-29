@@ -154,7 +154,7 @@ export default function ChatMessageList({
               {streamingToolCalls.map((tc) => (
                 <ToolResultCard key={String(tc.id)} toolCall={tc} />
               ))}
-              {toolRunning && !streamingContent ? (
+              {toolRunning && !streamingContent && streamingToolCalls.length === 0 ? (
                 <ToolResultCard
                   toolCall={{
                     id: 'running',

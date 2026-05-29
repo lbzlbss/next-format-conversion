@@ -10,7 +10,7 @@ const WELCOME_MESSAGE = {
   id: 'welcome',
   role: 'assistant',
   content:
-    '你好，我是 MediaFlow 的网站全能助手，兼具 AI 创作专家与八字命理师双重身份。\n\n你可以问我：\n· 文生图/图生图、视频转换\n· 生辰八字简析与转运建议\n· **上传 GIF**（输入框旁 📎）一键转 WebP 并下载\n· 支持导出对话或单条回复为 PDF',
+    '你好，我是 MediaFlow 助手。\n\n📎 上传 GIF/MP4/图片可调用：转 WebP、压缩、转 MP4、提取首帧等。\n直接输入描述可 **文生图**。\n也可问八字与创作参数；支持导出 PDF。',
 };
 
 const AiChatAssistant = () => {
@@ -30,6 +30,8 @@ const AiChatAssistant = () => {
     attachments,
     addFiles,
     removeAttachment,
+    preferredToolId,
+    setPreferredToolId,
   } = useChatComposer({ setMessages });
 
   useEffect(() => {
@@ -69,7 +71,7 @@ const AiChatAssistant = () => {
               </div>
               <div className="min-w-0">
                 <div className="truncate text-[14px] font-bold text-[#0f172a]">AI 对话助手</div>
-                <div className="text-[11px] text-[#94a3b8]">创作 · 转换 · GIF→WebP</div>
+                <div className="text-[11px] text-[#94a3b8]">创作 · 转换 · 站内工具</div>
               </div>
             </div>
             <button
@@ -104,6 +106,8 @@ const AiChatAssistant = () => {
               attachments={attachments}
               onAddFiles={addFiles}
               onRemoveAttachment={removeAttachment}
+              preferredToolId={preferredToolId}
+              onPreferredToolChange={setPreferredToolId}
               messages={messages}
               showPdf
             />

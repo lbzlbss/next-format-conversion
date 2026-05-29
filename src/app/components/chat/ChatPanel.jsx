@@ -9,7 +9,7 @@ const WELCOME_MESSAGE = {
   id: 'welcome',
   role: 'assistant',
   content:
-    '你好，我是 MediaFlow 的网站全能助手，兼具 AI 创作专家与八字命理师双重身份。\n\n你可以问我：\n· 文生图/图生图、视频转换（静止图转视频、参数设置）\n· 生辰八字简析与转运建议\n· 操作步骤与参数（如 ControlNet、Seed、运动强度、重绘幅度）\n· **上传 GIF**：在输入框旁点 📎，可说「转成 WebP，质量 75」，我会调用站内工具转换并提供下载\n· 对话结束后可「导出对话 PDF」',
+    '你好，我是 MediaFlow 的网站全能助手，兼具 AI 创作专家与八字命理师双重身份。\n\n**站内工具（上传附件 📎）**\n· GIF → WebP / 压缩 / 转 MP4\n· MP4 → 压缩 / 提取首帧\n· 图片 JPEG/PNG/WebP → 压缩\n\n**文生图**：直接描述画面，如「生成一张水墨山水」\n\n亦可咨询八字、AI 视频参数；支持导出对话 PDF。\n\nVAP/SVGA/ZIP 批量转换请使用首页专用工具。',
 };
 
 export default function ChatPanel({ variant = 'page', className = '', toolKey = null }) {
@@ -28,6 +28,8 @@ export default function ChatPanel({ variant = 'page', className = '', toolKey = 
     attachments,
     addFiles,
     removeAttachment,
+    preferredToolId,
+    setPreferredToolId,
   } = useChatComposer({ setMessages, chatContext: { toolKey } });
 
   useEffect(() => {
@@ -87,6 +89,8 @@ export default function ChatPanel({ variant = 'page', className = '', toolKey = 
           attachments={attachments}
           onAddFiles={addFiles}
           onRemoveAttachment={removeAttachment}
+          preferredToolId={preferredToolId}
+          onPreferredToolChange={setPreferredToolId}
           messages={messages}
           showPdf
           showFooterHint={isPage}
