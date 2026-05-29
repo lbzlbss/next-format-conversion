@@ -4,6 +4,21 @@ import { useCallback, useState } from 'react';
 
 /**
  * @typedef {{ slug: string, title: string }} WikiSource
+ * @typedef {{
+ *   id: string,
+ *   toolId: string,
+ *   status: 'pending' | 'running' | 'success' | 'error',
+ *   input?: Record<string, unknown>,
+ *   output?: { downloadUrl: string, fileName: string, beforeBytes: number, afterBytes: number },
+ *   error?: string,
+ * }} ToolCall
+ * @typedef {{
+ *   id: string,
+ *   name: string,
+ *   size: number,
+ *   previewUrl?: string,
+ *   kind?: string,
+ * }} ChatAttachmentMeta
  */
 
 async function consumeSseStream(reader, onEvent) {
@@ -46,7 +61,15 @@ async function consumeSseStream(reader, onEvent) {
 
 /**
  * @param {Object} options
- * @param {import('react').Dispatch<import('react').SetStateAction<Array<{id:string,role:string,content:string,thinking?:string,sources?:WikiSource[]}>>>} options.setMessages
+ * @param {import('react').Dispatch<import('react').SetStateAction<Array<{
+ *   id: string,
+ *   role: string,
+ *   content: string,
+ *   thinking?: string,
+ *   sources?: WikiSource[],
+ *   attachments?: ChatAttachmentMeta[],
+ *   toolCalls?: ToolCall[],
+ * }>>>} options.setMessages
  * @param {{ toolKey?: string|null, useWiki?: boolean }} [options.chatContext]
  */
 export function useChatStream({ setMessages, chatContext = {} }) {
@@ -54,32 +77,79 @@ export function useChatStream({ setMessages, chatContext = {} }) {
   const [streamingContent, setStreamingContent] = useState('');
   const [streamingThinking, setStreamingThinking] = useState('');
   const [streamingSources, setStreamingSources] = useState([]);
+  const [streamingToolCalls, setStreamingToolCalls] = useState([]);
 
   const sendMessage = useCallback(
-    async (historyMessages, userText) => {
-      const userMessage = { id: `u-${Date.now()}`, role: 'user', content: userText };
-      const nextHistory = [...historyMessages, userMessage];
+    /**
+     * @param {Array<{id:string,role:string,content:string,attachments?:ChatAttachmentMeta[],toolCalls?:ToolCall[]}>} historyMessages
+     * @param {string} userText
+     * @param {{ appendUser?: boolean, toolKey?: string|null, pendingToolCalls?: ToolCall[], apiUserContent?: string }} [options]
+     */
+    async (historyMessages, userText, options = {}) => {
+      const {
+        appendUser = true,
+        toolKey: toolKeyOverride = null,
+        pendingToolCalls = [],
+        apiUserContent,
+      } = options;
+
+      const text = String(userText || '').trim();
+      if (!text && appendUser) return;
+
+      /** @type {Array<{id:string,role:string,content:string,attachments?:ChatAttachmentMeta[],toolCalls?:ToolCall[]}>} */
+      let nextHistory = historyMessages;
+
+      if (appendUser) {
+        const userMessage = { id: `u-${Date.now()}`, role: 'user', content: text };
+        nextHistory = [...historyMessages, userMessage];
+      }
 
       setMessages(nextHistory);
       setLoading(true);
       setStreamingContent('');
       setStreamingThinking('');
       setStreamingSources([]);
+      setStreamingToolCalls(pendingToolCalls);
 
       let fullContent = '';
       let fullThinking = '';
       /** @type {WikiSource[]} */
       let sources = [];
 
+      const apiText = apiUserContent ?? text;
+
       try {
+        /** @type {{ role: string, content: string }[]} */
+        let messagesForApi = nextHistory.map((m) => ({
+          role: m.role,
+          content: m.content,
+        }));
+
+        if (apiUserContent) {
+          let lastUserIdx = -1;
+          for (let i = messagesForApi.length - 1; i >= 0; i--) {
+            if (messagesForApi[i].role === 'user') {
+              lastUserIdx = i;
+              break;
+            }
+          }
+          if (lastUserIdx >= 0) {
+            messagesForApi = messagesForApi.map((m, i) =>
+              i === lastUserIdx ? { ...m, content: apiUserContent } : m,
+            );
+          } else {
+            messagesForApi = [...messagesForApi, { role: 'user', content: apiUserContent }];
+          }
+        }
+
         const res = await fetch('/api/chat', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            messages: nextHistory.map((m) => ({ role: m.role, content: m.content })),
+            messages: messagesForApi,
             context: {
               useWiki: chatContext.useWiki !== false,
-              toolKey: chatContext.toolKey ?? null,
+              toolKey: toolKeyOverride ?? chatContext.toolKey ?? null,
             },
           }),
         });
@@ -113,6 +183,8 @@ export function useChatStream({ setMessages, chatContext = {} }) {
         setStreamingContent('');
         setStreamingThinking('');
         setStreamingSources([]);
+        setStreamingToolCalls([]);
+
         setMessages((prev) => [
           ...prev,
           {
@@ -121,6 +193,7 @@ export function useChatStream({ setMessages, chatContext = {} }) {
             content: fullContent,
             ...(fullThinking ? { thinking: fullThinking } : {}),
             ...(sources.length > 0 ? { sources } : {}),
+            ...(pendingToolCalls.length > 0 ? { toolCalls: pendingToolCalls } : {}),
           },
         ]);
       } catch (err) {
@@ -128,12 +201,18 @@ export function useChatStream({ setMessages, chatContext = {} }) {
         setStreamingContent('');
         setStreamingThinking('');
         setStreamingSources([]);
+        setStreamingToolCalls([]);
+
+        const errMsg = err?.message || '回复失败，请检查网络或稍后重试。';
         setMessages((prev) => [
           ...prev,
           {
             id: `e-${Date.now()}`,
             role: 'assistant',
-            content: err?.message || '回复失败，请检查网络或稍后重试。',
+            content: pendingToolCalls.some((t) => t.status === 'success')
+              ? `转换已完成，但解说生成失败：${errMsg}`
+              : errMsg,
+            ...(pendingToolCalls.length > 0 ? { toolCalls: pendingToolCalls } : {}),
           },
         ]);
       } finally {
@@ -148,6 +227,7 @@ export function useChatStream({ setMessages, chatContext = {} }) {
     streamingContent,
     streamingThinking,
     streamingSources,
+    streamingToolCalls,
     sendMessage,
   };
 }

@@ -1,18 +1,16 @@
 'use client';
 
 import React, { useState, useRef, useEffect } from 'react';
-import { Button, Input, Avatar } from 'antd';
-import { SendOutlined, RobotOutlined, UserOutlined, CloseOutlined } from '@ant-design/icons';
-import { useChatStream } from '../hooks/useChatStream';
-import ChatPdfButton from './chat/ChatPdfButton';
-
-const { TextArea } = Input;
+import { RobotOutlined, CloseOutlined } from '@ant-design/icons';
+import { useChatComposer } from '../hooks/useChatComposer';
+import ChatMessageList from './chat/ChatMessageList';
+import ChatInputArea from './chat/ChatInputArea';
 
 const WELCOME_MESSAGE = {
   id: 'welcome',
   role: 'assistant',
   content:
-    '你好，我是 MediaFlow 的网站全能助手，兼具 AI 创作专家与八字命理师双重身份。\n\n你可以问我：\n· 文生图/图生图、视频转换（静止图转视频、参数设置）\n· 生辰八字简析与转运建议\n· 操作步骤与参数（如 ControlNet、Seed、运动强度、重绘幅度）\n· 支持导出对话或单条回复为 PDF 下载',
+    '你好，我是 MediaFlow 的网站全能助手，兼具 AI 创作专家与八字命理师双重身份。\n\n你可以问我：\n· 文生图/图生图、视频转换\n· 生辰八字简析与转运建议\n· **上传 GIF**（输入框旁 📎）一键转 WebP 并下载\n· 支持导出对话或单条回复为 PDF',
 };
 
 const AiChatAssistant = () => {
@@ -21,25 +19,35 @@ const AiChatAssistant = () => {
   const [input, setInput] = useState('');
   const listRef = useRef(null);
 
-  const { loading, streamingContent, streamingThinking, sendMessage } =
-    useChatStream({ setMessages });
+  const {
+    busy,
+    toolRunning,
+    streamingContent,
+    streamingThinking,
+    streamingSources,
+    streamingToolCalls,
+    send,
+    attachments,
+    addFiles,
+    removeAttachment,
+  } = useChatComposer({ setMessages });
 
   useEffect(() => {
     if (listRef.current) {
       listRef.current.scrollTop = listRef.current.scrollHeight;
     }
-  }, [messages, streamingContent, streamingThinking]);
+  }, [messages, streamingContent, streamingThinking, toolRunning]);
 
   const handleSend = async () => {
+    if (busy) return;
     const text = input.trim();
-    if (!text || loading) return;
+    if (!text && attachments.length === 0) return;
     setInput('');
-    await sendMessage(messages, text);
+    await send(messages, text);
   };
 
   return (
     <>
-      {/* 右下角悬浮按钮 */}
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
@@ -49,7 +57,6 @@ const AiChatAssistant = () => {
         <RobotOutlined className="text-[24px]" />
       </button>
 
-      {/* 悬浮聊天框 */}
       {open && (
         <div
           className="fixed bottom-24 right-6 z-[1000] flex h-[520px] w-[400px] flex-col overflow-hidden rounded-2xl border border-[#e2e8f0] bg-white shadow-xl"
@@ -62,7 +69,7 @@ const AiChatAssistant = () => {
               </div>
               <div className="min-w-0">
                 <div className="truncate text-[14px] font-bold text-[#0f172a]">AI 对话助手</div>
-                <div className="text-[11px] text-[#94a3b8]">创作专家 · 视频转换 · 八字命理</div>
+                <div className="text-[11px] text-[#94a3b8]">创作 · 转换 · GIF→WebP</div>
               </div>
             </div>
             <button
@@ -75,92 +82,31 @@ const AiChatAssistant = () => {
             </button>
           </div>
 
-          <div
-            ref={listRef}
-            className="min-h-0 flex-1 overflow-y-auto p-4"
-          >
-            <div className="space-y-4">
-              {messages.map((m) => (
-                <div
-                  key={m.id}
-                  className={`flex gap-3 ${m.role === 'user' ? 'flex-row-reverse' : ''}`}
-                >
-                  <Avatar
-                    size={36}
-                    icon={m.role === 'user' ? <UserOutlined /> : <RobotOutlined />}
-                    className={
-                      m.role === 'user'
-                        ? 'shrink-0 !bg-mf-cta'
-                        : 'shrink-0 !bg-mf-sidebar'
-                    }
-                  />
-                  <div
-                    className={
-                      m.role === 'user'
-                        ? 'max-w-[85%] rounded-2xl rounded-tr-md bg-mf-cta px-4 py-2 text-[13px] text-white'
-                        : 'max-w-[85%] rounded-2xl rounded-tl-md bg-[#f1f5f9] px-4 py-2 text-[13px] text-[#0f172a]'
-                    }
-                  >
-                    <div className="whitespace-pre-wrap break-words">{m.content}</div>
-                    {m.role === 'assistant' && m.id !== 'welcome' && (
-                      <div className="mt-2 flex justify-end border-t border-[#e2e8f0] pt-2">
-                        <ChatPdfButton
-                          mode="single"
-                          messages={messages}
-                          singleMessage={m}
-                          type="link"
-                        />
-                      </div>
-                    )}
-                  </div>
-                </div>
-              ))}
-              {(loading || streamingContent || streamingThinking) && (
-                <div className="flex gap-3">
-                  <Avatar
-                    size={36}
-                    icon={<RobotOutlined />}
-                    className="shrink-0 bg-mf-cta"
-                  />
-                  <div className="max-w-[85%] rounded-2xl rounded-tl-md bg-[#f1f5f9] px-4 py-2 text-[13px] text-[#0f172a]">
-                    <div className="whitespace-pre-wrap break-words">
-                      {streamingContent || <span className="animate-pulse text-[#64748b]">正在思考…</span>}
-                    </div>
-                  </div>
-                </div>
-              )}
-            </div>
+          <div ref={listRef} className="min-h-0 flex-1 overflow-y-auto p-4">
+            <ChatMessageList
+              messages={messages}
+              streamingThinking={streamingThinking}
+              streamingContent={streamingContent}
+              streamingSources={streamingSources}
+              streamingToolCalls={streamingToolCalls}
+              loading={busy}
+              toolRunning={toolRunning}
+              variant="float"
+            />
           </div>
 
           <div className="shrink-0 border-t border-[#e2e8f0] p-3">
-            <div className="mb-2 flex justify-end">
-              <ChatPdfButton mode="full" messages={messages} size="small" />
-            </div>
-            <div className="flex gap-2">
-              <TextArea
-                value={input}
-                onChange={(e) => setInput(e.target.value)}
-                onPressEnter={(e) => {
-                  if (!e.shiftKey) {
-                    e.preventDefault();
-                    handleSend();
-                  }
-                }}
-                placeholder="输入问题，Enter 发送，Shift+Enter 换行"
-                autoSize={{ minRows: 1, maxRows: 4 }}
-                className="min-w-0 flex-1 rounded-xl"
-                disabled={loading}
-              />
-              <Button
-                type="primary"
-                icon={<SendOutlined />}
-                onClick={handleSend}
-                loading={loading}
-                className="shrink-0 rounded-xl bg-mf-cta"
-              >
-                发送
-              </Button>
-            </div>
+            <ChatInputArea
+              input={input}
+              onInputChange={setInput}
+              onSend={handleSend}
+              busy={busy}
+              attachments={attachments}
+              onAddFiles={addFiles}
+              onRemoveAttachment={removeAttachment}
+              messages={messages}
+              showPdf
+            />
           </div>
         </div>
       )}

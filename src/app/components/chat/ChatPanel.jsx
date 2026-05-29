@@ -1,19 +1,15 @@
 'use client';
 
 import React, { useRef, useEffect, useState } from 'react';
-import { Button, Input, Avatar } from 'antd';
-import { SendOutlined, RobotOutlined, UserOutlined, BulbOutlined } from '@ant-design/icons';
-import { useChatStream } from '../../hooks/useChatStream';
-import WikiSources from './WikiSources';
-import ChatPdfButton from './ChatPdfButton';
-
-const { TextArea } = Input;
+import { useChatComposer } from '../../hooks/useChatComposer';
+import ChatMessageList from './ChatMessageList';
+import ChatInputArea from './ChatInputArea';
 
 const WELCOME_MESSAGE = {
   id: 'welcome',
   role: 'assistant',
   content:
-    '你好，我是 MediaFlow 的网站全能助手，兼具 AI 创作专家与八字命理师双重身份。\n\n你可以问我：\n· 文生图/图生图、视频转换（静止图转视频、参数设置）\n· 生辰八字简析与转运建议\n· 操作步骤与参数（如 ControlNet、Seed、运动强度、重绘幅度）\n· 对话结束后可「导出对话 PDF」或单条回复导出 PDF 留存',
+    '你好，我是 MediaFlow 的网站全能助手，兼具 AI 创作专家与八字命理师双重身份。\n\n你可以问我：\n· 文生图/图生图、视频转换（静止图转视频、参数设置）\n· 生辰八字简析与转运建议\n· 操作步骤与参数（如 ControlNet、Seed、运动强度、重绘幅度）\n· **上传 GIF**：在输入框旁点 📎，可说「转成 WebP，质量 75」，我会调用站内工具转换并提供下载\n· 对话结束后可「导出对话 PDF」',
 };
 
 export default function ChatPanel({ variant = 'page', className = '', toolKey = null }) {
@@ -21,20 +17,31 @@ export default function ChatPanel({ variant = 'page', className = '', toolKey = 
   const [input, setInput] = useState('');
   const listRef = useRef(null);
 
-  const { loading, streamingContent, streamingThinking, streamingSources, sendMessage } =
-    useChatStream({ setMessages, chatContext: { toolKey } });
+  const {
+    busy,
+    toolRunning,
+    streamingContent,
+    streamingThinking,
+    streamingSources,
+    streamingToolCalls,
+    send,
+    attachments,
+    addFiles,
+    removeAttachment,
+  } = useChatComposer({ setMessages, chatContext: { toolKey } });
 
   useEffect(() => {
     if (listRef.current) {
       listRef.current.scrollTop = listRef.current.scrollHeight;
     }
-  }, [messages, streamingContent, streamingThinking, streamingSources]);
+  }, [messages, streamingContent, streamingThinking, streamingSources, toolRunning]);
 
   const handleSend = async () => {
+    if (busy) return;
     const text = input.trim();
-    if (!text || loading) return;
+    if (!text && attachments.length === 0) return;
     setInput('');
-    await sendMessage(messages, text);
+    await send(messages, text);
   };
 
   const isPage = variant === 'page';
@@ -52,97 +59,16 @@ export default function ChatPanel({ variant = 'page', className = '', toolKey = 
             : 'min-h-0 flex-1 overflow-y-auto p-4'
         }
       >
-        <div className="mx-auto max-w-3xl space-y-5">
-          {messages.map((m) => (
-            <div
-              key={m.id}
-              className={`flex gap-3 ${m.role === 'user' ? 'flex-row-reverse' : ''}`}
-            >
-              <Avatar
-                size={40}
-                icon={m.role === 'user' ? <UserOutlined /> : <RobotOutlined />}
-                className={
-                  m.role === 'user'
-                    ? 'shrink-0 !bg-mf-cta'
-                    : 'shrink-0 !bg-mf-sidebar'
-                }
-              />
-              <div className="min-w-0 max-w-[min(85%,720px)]">
-                {m.thinking && (
-                  <div className="mb-2 rounded-xl border border-mf-border bg-mf-accent-soft px-4 py-3 text-xs text-mf-accent-soft-fg">
-                    <div className="mb-1 flex items-center gap-1 font-semibold">
-                      <BulbOutlined />
-                      思考过程
-                    </div>
-                    <div className="whitespace-pre-wrap break-words opacity-90">
-                      {m.thinking}
-                    </div>
-                  </div>
-                )}
-                <div
-                  className={
-                    m.role === 'user'
-                      ? 'rounded-2xl rounded-tr-md bg-mf-cta px-4 py-3 text-sm text-white'
-                      : 'rounded-2xl rounded-tl-md bg-mf-surface px-4 py-3 text-sm text-mf-text shadow-sm ring-1 ring-mf-border'
-                  }
-                >
-                  <div className="whitespace-pre-wrap break-words">{m.content}</div>
-                  {m.role === 'assistant' && m.sources?.length > 0 && (
-                    <WikiSources sources={m.sources} />
-                  )}
-                  {m.role === 'assistant' && m.id !== 'welcome' && (
-                    <div className="mt-2 flex justify-end border-t border-mf-border/60 pt-2">
-                      <ChatPdfButton
-                        mode="single"
-                        messages={messages}
-                        singleMessage={m}
-                        type="link"
-                      />
-                    </div>
-                  )}
-                </div>
-              </div>
-            </div>
-          ))}
-
-          {(loading ||
-            Boolean(streamingThinking) ||
-            Boolean(streamingContent) ||
-            (streamingSources?.length ?? 0) > 0) && (
-            <div className="flex gap-3">
-              <Avatar
-                size={40}
-                icon={<RobotOutlined />}
-                className="shrink-0 !bg-mf-sidebar"
-              />
-              <div className="min-w-0 max-w-[min(85%,720px)]">
-                {streamingThinking && (
-                  <div className="mb-2 rounded-xl border border-mf-border bg-mf-accent-soft px-4 py-3 text-xs text-mf-accent-soft-fg">
-                    <div className="mb-1 flex items-center gap-1 font-semibold">
-                      <BulbOutlined />
-                      正在思考…
-                    </div>
-                    <div className="whitespace-pre-wrap break-words opacity-90">
-                      {streamingThinking}
-                    </div>
-                  </div>
-                )}
-                <div className="rounded-2xl rounded-tl-md bg-mf-surface px-4 py-3 text-sm text-mf-text shadow-sm ring-1 ring-mf-border">
-                  <div className="whitespace-pre-wrap break-words">
-                    {streamingContent || (
-                      <div className="animate-pulse text-mf-muted">
-                        {streamingThinking ? '正在组织回复…' : '正在思考…'}
-                      </div>
-                    )}
-                  </div>
-                  {streamingSources?.length > 0 && (
-                    <WikiSources sources={streamingSources} />
-                  )}
-                </div>
-              </div>
-            </div>
-          )}
-        </div>
+        <ChatMessageList
+          messages={messages}
+          streamingThinking={streamingThinking}
+          streamingContent={streamingContent}
+          streamingSources={streamingSources}
+          streamingToolCalls={streamingToolCalls}
+          loading={busy}
+          toolRunning={toolRunning}
+          variant={isPage ? 'page' : 'float'}
+        />
       </div>
 
       <div
@@ -152,39 +78,19 @@ export default function ChatPanel({ variant = 'page', className = '', toolKey = 
             : 'shrink-0 border-t border-mf-border bg-mf-surface p-3'
         }
       >
-        <div className="mx-auto mb-2 flex max-w-3xl justify-end">
-          <ChatPdfButton mode="full" messages={messages} size="small" />
-        </div>
-        <div className="mx-auto flex max-w-3xl gap-3">
-          <TextArea
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            onPressEnter={(e) => {
-              if (!e.shiftKey) {
-                e.preventDefault();
-                handleSend();
-              }
-            }}
-            placeholder="输入问题，Enter 发送，Shift+Enter 换行"
-            autoSize={{ minRows: 1, maxRows: 5 }}
-            className="min-w-0 flex-1 rounded-xl"
-            disabled={loading}
-          />
-          <Button
-            type="primary"
-            icon={<SendOutlined />}
-            onClick={handleSend}
-            loading={loading}
-            className="h-auto shrink-0 self-end rounded-xl !bg-mf-cta !border-mf-cta px-5"
-          >
-            发送
-          </Button>
-        </div>
-        {isPage && (
-          <div className="mx-auto mt-2 max-w-3xl text-center text-[11px] text-mf-muted">
-            模型：豆包 Seed 2.0 Lite · SSE 流式传输
-          </div>
-        )}
+        <ChatInputArea
+          className={isPage ? 'mx-auto max-w-3xl' : ''}
+          input={input}
+          onInputChange={setInput}
+          onSend={handleSend}
+          busy={busy}
+          attachments={attachments}
+          onAddFiles={addFiles}
+          onRemoveAttachment={removeAttachment}
+          messages={messages}
+          showPdf
+          showFooterHint={isPage}
+        />
       </div>
     </div>
   );

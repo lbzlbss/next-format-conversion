@@ -1,0 +1,40 @@
+{
+  "ok": true,
+  "checks": [
+    {
+      "id": "lint",
+      "name": "ESLint (对话/PDF 范围)",
+      "ok": true
+    },
+    {
+      "id": "build",
+      "name": "Production Build",
+      "ok": true
+    },
+    {
+      "id": "pdf-local",
+      "name": "PDF 本地生成",
+      "ok": true,
+      "durationMs": 350
+    },
+    {
+      "id": "page-/chat",
+      "name": "页面 /chat",
+      "ok": true,
+      "durationMs": 3153
+    },
+    {
+      "id": "pdf-api-remote",
+      "name": "PDF API https://nextformat.aiblank.top/api/chat/pdf",
+      "ok": true,
+      "durationMs": 5377
+    }
+  ],
+  "failed": [],
+  "summary": {
+    "total": 5,
+    "passed": 5,
+    "failed": 0
+  },
+  "at": "2026-05-29T06:53:25.307Z"
+}
