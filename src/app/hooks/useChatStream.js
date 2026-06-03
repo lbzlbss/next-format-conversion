@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useState } from 'react';
+import { useCallback, useRef, useState } from 'react';
 
 /**
  * @typedef {{ slug: string, title: string }} WikiSource
@@ -28,11 +28,16 @@ import { useCallback, useState } from 'react';
  * }} ChatAttachmentMeta
  */
 
-async function consumeSseStream(reader, onEvent) {
+async function consumeSseStream(reader, onEvent, signal) {
   const decoder = new TextDecoder();
   let buffer = '';
 
   while (true) {
+    if (signal?.aborted) {
+      await reader.cancel().catch(() => {});
+      throw new DOMException('Aborted', 'AbortError');
+    }
+
     const { done, value } = await reader.read();
     if (done) break;
 
@@ -85,6 +90,13 @@ export function useChatStream({ setMessages, chatContext = {} }) {
   const [streamingThinking, setStreamingThinking] = useState('');
   const [streamingSources, setStreamingSources] = useState([]);
   const [streamingToolCalls, setStreamingToolCalls] = useState([]);
+  const abortRef = useRef(/** @type {AbortController | null} */ (null));
+  const readerRef = useRef(/** @type {ReadableStreamDefaultReader<Uint8Array> | null} */ (null));
+
+  const stopStreaming = useCallback(() => {
+    abortRef.current?.abort();
+    readerRef.current?.cancel().catch(() => {});
+  }, []);
 
   const sendMessage = useCallback(
     /**
@@ -123,6 +135,9 @@ export function useChatStream({ setMessages, chatContext = {} }) {
       /** @type {WikiSource[]} */
       let sources = [];
 
+      const controller = new AbortController();
+      abortRef.current = controller;
+
       try {
         /** @type {{ role: string, content: string }[]} */
         let messagesForApi = nextHistory.map((m) => ({
@@ -157,6 +172,7 @@ export function useChatStream({ setMessages, chatContext = {} }) {
               toolKey: toolKeyOverride ?? chatContext.toolKey ?? null,
             },
           }),
+          signal: controller.signal,
         });
 
         if (!res.ok) {
@@ -166,24 +182,29 @@ export function useChatStream({ setMessages, chatContext = {} }) {
 
         const reader = res.body?.getReader();
         if (!reader) throw new Error('无响应体');
+        readerRef.current = reader;
 
-        await consumeSseStream(reader, (eventType, payload) => {
-          if (eventType === 'sources' && Array.isArray(payload.items)) {
-            sources = payload.items;
-            setStreamingSources(payload.items);
-          }
-          if (eventType === 'thinking' && typeof payload.content === 'string') {
-            fullThinking += payload.content;
-            setStreamingThinking(fullThinking);
-          }
-          if (eventType === 'content' && typeof payload.content === 'string') {
-            fullContent += payload.content;
-            setStreamingContent(fullContent);
-          }
-          if (eventType === 'error') {
-            throw new Error(payload.error || '流式响应异常');
-          }
-        });
+        await consumeSseStream(
+          reader,
+          (eventType, payload) => {
+            if (eventType === 'sources' && Array.isArray(payload.items)) {
+              sources = payload.items;
+              setStreamingSources(payload.items);
+            }
+            if (eventType === 'thinking' && typeof payload.content === 'string') {
+              fullThinking += payload.content;
+              setStreamingThinking(fullThinking);
+            }
+            if (eventType === 'content' && typeof payload.content === 'string') {
+              fullContent += payload.content;
+              setStreamingContent(fullContent);
+            }
+            if (eventType === 'error') {
+              throw new Error(payload.error || '流式响应异常');
+            }
+          },
+          controller.signal,
+        );
 
         setStreamingContent('');
         setStreamingThinking('');
@@ -202,25 +223,52 @@ export function useChatStream({ setMessages, chatContext = {} }) {
           },
         ]);
       } catch (err) {
-        console.error(err);
+        const aborted =
+          controller.signal.aborted ||
+          err?.name === 'AbortError' ||
+          err?.code === 20;
+
         setStreamingContent('');
         setStreamingThinking('');
         setStreamingSources([]);
         setStreamingToolCalls([]);
 
-        const errMsg = err?.message || '回复失败，请检查网络或稍后重试。';
-        setMessages((prev) => [
-          ...prev,
-          {
-            id: `e-${Date.now()}`,
-            role: 'assistant',
-            content: pendingToolCalls.some((t) => t.status === 'success')
-              ? `转换已完成，但解说生成失败：${errMsg}`
-              : errMsg,
-            ...(pendingToolCalls.length > 0 ? { toolCalls: pendingToolCalls } : {}),
-          },
-        ]);
+        if (aborted) {
+          const pausedContent =
+            fullContent.trim() ||
+            (pendingToolCalls.some((t) => t.status === 'success')
+              ? '转换已完成，解说生成已暂停。'
+              : '（回复已暂停）');
+
+          setMessages((prev) => [
+            ...prev,
+            {
+              id: `a-${Date.now()}`,
+              role: 'assistant',
+              content: pausedContent,
+              ...(fullThinking ? { thinking: fullThinking } : {}),
+              ...(sources.length > 0 ? { sources } : {}),
+              ...(pendingToolCalls.length > 0 ? { toolCalls: pendingToolCalls } : {}),
+            },
+          ]);
+        } else {
+          console.error(err);
+          const errMsg = err?.message || '回复失败，请检查网络或稍后重试。';
+          setMessages((prev) => [
+            ...prev,
+            {
+              id: `e-${Date.now()}`,
+              role: 'assistant',
+              content: pendingToolCalls.some((t) => t.status === 'success')
+                ? `转换已完成，但解说生成失败：${errMsg}`
+                : errMsg,
+              ...(pendingToolCalls.length > 0 ? { toolCalls: pendingToolCalls } : {}),
+            },
+          ]);
+        }
       } finally {
+        readerRef.current = null;
+        abortRef.current = null;
         setLoading(false);
       }
     },
@@ -234,5 +282,6 @@ export function useChatStream({ setMessages, chatContext = {} }) {
     streamingSources,
     streamingToolCalls,
     sendMessage,
+    stopStreaming,
   };
 }

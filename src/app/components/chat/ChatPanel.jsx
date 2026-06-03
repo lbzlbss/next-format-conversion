@@ -2,8 +2,16 @@
 
 import React, { useRef, useEffect, useState } from 'react';
 import { useChatComposer } from '../../hooks/useChatComposer';
+import { useDigitalHumanState } from '../../hooks/useDigitalHumanState';
+import {
+  DigitalHumanStatusBar,
+  DigitalHumanViewport,
+} from '../digital-human/DigitalHumanStage';
 import ChatMessageList from './ChatMessageList';
 import ChatInputArea from './ChatInputArea';
+
+const AVATAR_COLUMN =
+  'hidden h-full min-h-0 w-[min(36vw,340px)] shrink-0 flex-col border-r border-mf-border bg-mf-canvas lg:flex';
 
 const WELCOME_MESSAGE = {
   id: 'welcome',
@@ -15,7 +23,12 @@ const WELCOME_MESSAGE = {
 export default function ChatPanel({ variant = 'page', className = '', toolKey = null }) {
   const [messages, setMessages] = useState([WELCOME_MESSAGE]);
   const [input, setInput] = useState('');
+  const [avatarReady, setAvatarReady] = useState(false);
   const listRef = useRef(null);
+
+  useEffect(() => {
+    setAvatarReady(true);
+  }, []);
 
   const {
     busy,
@@ -25,12 +38,21 @@ export default function ChatPanel({ variant = 'page', className = '', toolKey = 
     streamingSources,
     streamingToolCalls,
     send,
+    stopStreaming,
+    loading: streamLoading,
     attachments,
     addFiles,
     removeAttachment,
     preferredToolId,
     setPreferredToolId,
   } = useChatComposer({ setMessages, chatContext: { toolKey } });
+
+  const avatarState = useDigitalHumanState({
+    busy,
+    toolRunning,
+    streamingContent,
+    streamingThinking,
+  });
 
   useEffect(() => {
     if (listRef.current) {
@@ -47,20 +69,68 @@ export default function ChatPanel({ variant = 'page', className = '', toolKey = 
   };
 
   const isPage = variant === 'page';
-  const rootClass = isPage
-    ? `flex h-full min-h-0 flex-1 flex-col ${className}`
-    : `flex h-full flex-col ${className}`;
+
+  if (isPage) {
+    return (
+      <div className={`flex h-full min-h-0 w-full overflow-hidden ${className}`}>
+        {avatarReady ? (
+          <aside className={AVATAR_COLUMN}>
+            <DigitalHumanViewport state={avatarState} className="h-full min-h-0 flex-1" />
+            <DigitalHumanStatusBar state={avatarState} className="shrink-0" />
+          </aside>
+        ) : (
+          <aside className={AVATAR_COLUMN} aria-hidden>
+            <div className="flex flex-1 items-center justify-center px-2 pt-6 text-[11px] text-mf-muted">
+              加载数字人…
+            </div>
+            <div className="shrink-0 border-t border-mf-border bg-mf-surface py-4" />
+          </aside>
+        )}
+
+        <section className="flex h-full min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
+          <div
+            ref={listRef}
+            className="min-h-0 flex-1 overflow-y-auto bg-mf-canvas px-4 pt-6 md:px-6"
+          >
+            <ChatMessageList
+              messages={messages}
+              streamingThinking={streamingThinking}
+              streamingContent={streamingContent}
+              streamingSources={streamingSources}
+              streamingToolCalls={streamingToolCalls}
+              loading={busy}
+              toolRunning={toolRunning}
+              variant="page"
+            />
+          </div>
+
+          <div className="shrink-0 border-t border-mf-border bg-mf-surface px-4 py-4 md:px-6">
+            <ChatInputArea
+              className="mx-auto max-w-3xl"
+              input={input}
+              onInputChange={setInput}
+              onSend={handleSend}
+              onStop={stopStreaming}
+              canStop={streamLoading}
+              busy={busy}
+              attachments={attachments}
+              onAddFiles={addFiles}
+              onRemoveAttachment={removeAttachment}
+              preferredToolId={preferredToolId}
+              onPreferredToolChange={setPreferredToolId}
+              messages={messages}
+              showPdf
+              showFooterHint
+            />
+          </div>
+        </section>
+      </div>
+    );
+  }
 
   return (
-    <div className={rootClass}>
-      <div
-        ref={listRef}
-        className={
-          isPage
-            ? 'min-h-0 flex-1 overflow-y-auto bg-mf-canvas px-4 py-6 md:px-6'
-            : 'min-h-0 flex-1 overflow-y-auto p-4'
-        }
-      >
+    <div className={`flex h-full min-h-0 flex-col overflow-hidden ${className}`}>
+      <div ref={listRef} className="min-h-0 flex-1 overflow-y-auto p-4">
         <ChatMessageList
           messages={messages}
           streamingThinking={streamingThinking}
@@ -69,22 +139,16 @@ export default function ChatPanel({ variant = 'page', className = '', toolKey = 
           streamingToolCalls={streamingToolCalls}
           loading={busy}
           toolRunning={toolRunning}
-          variant={isPage ? 'page' : 'float'}
+          variant="float"
         />
       </div>
-
-      <div
-        className={
-          isPage
-            ? 'shrink-0 border-t border-mf-border bg-mf-surface px-4 py-4 md:px-6'
-            : 'shrink-0 border-t border-mf-border bg-mf-surface p-3'
-        }
-      >
+      <div className="shrink-0 border-t border-mf-border bg-mf-surface p-3">
         <ChatInputArea
-          className={isPage ? 'mx-auto max-w-3xl' : ''}
           input={input}
           onInputChange={setInput}
           onSend={handleSend}
+          onStop={stopStreaming}
+          canStop={streamLoading}
           busy={busy}
           attachments={attachments}
           onAddFiles={addFiles}
@@ -93,7 +157,6 @@ export default function ChatPanel({ variant = 'page', className = '', toolKey = 
           onPreferredToolChange={setPreferredToolId}
           messages={messages}
           showPdf
-          showFooterHint={isPage}
         />
       </div>
     </div>

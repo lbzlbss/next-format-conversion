@@ -2,7 +2,7 @@
 
 import { useRef } from 'react';
 import { Button, Input } from 'antd';
-import { SendOutlined, PaperClipOutlined } from '@ant-design/icons';
+import { SendOutlined, PaperClipOutlined, PauseOutlined } from '@ant-design/icons';
 import ChatAttachmentBar from './ChatAttachmentBar.jsx';
 import ChatPdfButton from './ChatPdfButton.jsx';
 import ChatToolPicker from './ChatToolPicker.jsx';
@@ -15,6 +15,8 @@ const { TextArea } = Input;
  *   input: string,
  *   onInputChange: (v: string) => void,
  *   onSend: () => void,
+ *   onStop?: () => void,
+ *   canStop?: boolean,
  *   busy: boolean,
  *   attachments: import('../../hooks/useChatAttachments.js').ChatPendingAttachment[],
  *   onAddFiles: (files: FileList | File[]) => { ok: boolean, error?: string },
@@ -31,6 +33,8 @@ export default function ChatInputArea({
   input,
   onInputChange,
   onSend,
+  onStop,
+  canStop = false,
   busy,
   attachments,
   onAddFiles,
@@ -96,7 +100,7 @@ export default function ChatInputArea({
           value={input}
           onChange={(e) => onInputChange(e.target.value)}
           onPressEnter={(e) => {
-            if (!e.shiftKey) {
+            if (!e.shiftKey && !busy) {
               e.preventDefault();
               onSend();
             }
@@ -104,17 +108,30 @@ export default function ChatInputArea({
           placeholder="提问、文生图，或上传 GIF/MP4/图片 调用站内工具"
           autoSize={{ minRows: 1, maxRows: 5 }}
           className="min-w-0 flex-1 rounded-xl"
-          disabled={busy}
+          disabled={busy && !canStop}
         />
-        <Button
-          type="primary"
-          icon={<SendOutlined />}
-          onClick={onSend}
-          loading={busy}
-          className="h-auto shrink-0 self-end rounded-xl !bg-mf-cta !border-mf-cta px-5"
-        >
-          发送
-        </Button>
+        {canStop ? (
+          <Button
+            type="default"
+            danger
+            icon={<PauseOutlined />}
+            onClick={onStop}
+            className="h-auto shrink-0 self-end rounded-xl px-5"
+          >
+            暂停
+          </Button>
+        ) : (
+          <Button
+            type="primary"
+            icon={<SendOutlined />}
+            onClick={onSend}
+            loading={busy}
+            disabled={busy}
+            className="h-auto shrink-0 self-end rounded-xl !bg-mf-cta !border-mf-cta px-5"
+          >
+            发送
+          </Button>
+        )}
       </div>
 
       {showFooterHint ? (

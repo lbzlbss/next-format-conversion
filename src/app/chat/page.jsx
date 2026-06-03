@@ -7,10 +7,10 @@ import SubPageHeader from '../components/layout/SubPageHeader';
 
 export default function ChatPage() {
   return (
-    <div className="flex h-screen flex-col bg-mf-canvas">
+    <div className="flex h-[100dvh] flex-col overflow-hidden bg-mf-canvas">
       <SubPageHeader
         title="AI 对话助手"
-        subtitle="创作专家 · 视频转换 · 八字命理 · Wiki RAG · 支持导出 PDF"
+        subtitle="创作专家 · 视频转换 · 八字命理 · 左侧 3D 数字人 · 支持导出 PDF"
         actions={
           <>
             <span className="mf-logo-badge hidden sm:grid">
@@ -26,7 +26,9 @@ export default function ChatPage() {
           </>
         }
       />
-      <ChatPanel variant="page" />
+      <main className="min-h-0 flex-1 overflow-hidden">
+        <ChatPanel variant="page" className="h-full w-full" />
+      </main>
     </div>
   );
 }

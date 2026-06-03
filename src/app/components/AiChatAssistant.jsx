@@ -27,6 +27,8 @@ const AiChatAssistant = () => {
     streamingSources,
     streamingToolCalls,
     send,
+    stopStreaming,
+    loading: streamLoading,
     attachments,
     addFiles,
     removeAttachment,
@@ -102,6 +104,8 @@ const AiChatAssistant = () => {
               input={input}
               onInputChange={setInput}
               onSend={handleSend}
+              onStop={stopStreaming}
+              canStop={streamLoading}
               busy={busy}
               attachments={attachments}
               onAddFiles={addFiles}
