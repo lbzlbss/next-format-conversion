@@ -52,7 +52,7 @@ src/app/
 | 能力 | 现状 |
 |------|------|
 | middleware | ❌ 不存在 |
-| 数据库 | ❌ 无 ORM / 无用户表 |
+| 数据库 | ✅ Neon（`neon-charcoal-horizon`），见 [setup-neon.md](./setup-neon.md) |
 | Session | ❌ 仅 `sessionStorage` 存 ZIP 任务 |
 | 鉴权 | 仅 `blob/cleanup` 用 `Bearer` 密钥 |
 
@@ -480,7 +480,8 @@ src/
 |------|------|
 | `AUTH_SECRET` | `openssl rand -base64 32` |
 | `AUTH_URL` | 生产 `https://nextformat.aiblank.top` |
-| `DATABASE_URL` | Neon pooled connection string |
+| `DATABASE_URL` | Neon pooled connection string（Vercel 集成已注入） |
+| `NEON_PROJECT_ID` | Neon 项目 ID |
 | `KV_REST_API_URL` | Vercel Upstash 集成自动注入（推荐） |
 | `KV_REST_API_TOKEN` | 同上 |
 | `UPSTASH_REDIS_REST_URL` | 手动创建 Upstash 时的别名 |
