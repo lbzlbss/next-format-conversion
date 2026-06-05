@@ -12,7 +12,7 @@ export async function GET(request) {
     return Response.json({ error: '无效的 metric' }, { status: 400 });
   }
 
-  const session = await getSession(request);
+  const session = await getSession();
   const status = await getQuotaStatus(request, metric, session ?? {});
 
   return Response.json(status, {

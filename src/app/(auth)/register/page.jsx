@@ -1,16 +1,61 @@
 'use client';
 
+import { useState } from 'react';
 import Link from 'next/link';
-import { Alert, Button, Checkbox, Form, Input } from 'antd';
+import { useRouter } from 'next/navigation';
+import { signIn } from 'next-auth/react';
+import { Alert, Button, Checkbox, Form, Input, message } from 'antd';
 import AuthCard from '../../components/auth/AuthCard';
 
 export default function RegisterPage() {
   const [form] = Form.useForm();
+  const [loading, setLoading] = useState(false);
+  const router = useRouter();
+
+  const onFinish = async (values) => {
+    setLoading(true);
+    try {
+      const res = await fetch('/api/auth/register', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          email: values.email.trim(),
+          password: values.password,
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+
+      if (!res.ok) {
+        message.error(data.message || data.error || '注册失败');
+        return;
+      }
+
+      const signInResult = await signIn('credentials', {
+        email: values.email.trim(),
+        password: values.password,
+        redirect: false,
+      });
+
+      if (signInResult?.error) {
+        message.success('注册成功，请登录');
+        router.push('/login');
+        return;
+      }
+
+      message.success('注册成功，已自动登录');
+      router.push('/');
+      router.refresh();
+    } catch {
+      message.error('注册失败，请稍后重试');
+    } finally {
+      setLoading(false);
+    }
+  };
 
   return (
     <AuthCard
       title="创建账号"
-      subtitle="注册后可获得更高文生图与对话额度"
+      subtitle="注册后文生图 20 次/日、对话 100 轮/日"
       footer={
         <span className="text-mf-muted">
           已有账号？{' '}
@@ -24,10 +69,10 @@ export default function RegisterPage() {
         type="info"
         showIcon
         className="mb-4"
-        message="游客试用说明"
-        description="未注册也可使用：文生图每日 2 次、AI 对话每日 20 轮。注册后额度将显著提升。"
+        message="游客仍可试用"
+        description="未登录：文生图每日 2 次、对话 20 轮。注册后额度提升。"
       />
-      <Form form={form} layout="vertical" requiredMark={false}>
+      <Form form={form} layout="vertical" onFinish={onFinish} requiredMark={false}>
         <Form.Item
           name="email"
           label="邮箱"
@@ -44,8 +89,12 @@ export default function RegisterPage() {
           rules={[
             { required: true, message: '请输入密码' },
             { min: 8, message: '至少 8 位' },
+            {
+              pattern: /^(?=.*[A-Za-z])(?=.*\d).+$/,
+              message: '需同时包含字母与数字',
+            },
           ]}
-          extra="至少 8 位，建议包含字母与数字"
+          extra="至少 8 位，需包含字母与数字"
         >
           <Input.Password placeholder="••••••••" autoComplete="new-password" size="large" />
         </Form.Item>
@@ -77,12 +126,10 @@ export default function RegisterPage() {
             },
           ]}
         >
-          <Checkbox>
-            我已阅读并同意服务条款与隐私政策
-          </Checkbox>
+          <Checkbox>我已阅读并同意服务条款与隐私政策</Checkbox>
         </Form.Item>
-        <Button type="primary" htmlType="submit" block size="large" disabled>
-          注册（即将开放）
+        <Button type="primary" htmlType="submit" block size="large" loading={loading}>
+          注册
         </Button>
       </Form>
     </AuthCard>

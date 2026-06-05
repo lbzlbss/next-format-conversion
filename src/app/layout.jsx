@@ -1,6 +1,7 @@
 import { ConfigProvider } from 'antd';
 import './globals.css';
 import { firaCode, firaSans } from './fonts';
+import AuthSessionProvider from './providers/AuthSessionProvider';
 
 export const metadata = {
   title: 'MediaFlow — 多媒体格式转换',
@@ -27,7 +28,7 @@ export default function RootLayout({ children }) {
             },
           }}
         >
-          {children}
+          <AuthSessionProvider>{children}</AuthSessionProvider>
         </ConfigProvider>
       </body>
     </html>

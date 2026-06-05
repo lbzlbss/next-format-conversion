@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { BookOutlined, RobotOutlined } from '@ant-design/icons';
 import ChatPanel from '../components/chat/ChatPanel';
 import SubPageHeader from '../components/layout/SubPageHeader';
+import UserMenu from '../components/layout/UserMenu';
 
 export default function ChatPage() {
   return (
@@ -23,6 +24,7 @@ export default function ChatPage() {
               <BookOutlined />
               知识库
             </Link>
+            <UserMenu compact />
           </>
         }
       />

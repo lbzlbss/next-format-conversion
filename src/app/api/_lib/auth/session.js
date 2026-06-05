@@ -1,19 +1,27 @@
+import { auth } from '../../../../auth.js';
+
 /**
- * 会话解析（P1 接入 Auth.js 后替换为 auth()）
- * @param {import('next/server').NextRequest} [_request]
- * @returns {Promise<{ userId: string | null, plan: 'free' | 'pro', email?: string | null } | null>}
+ * @returns {Promise<{ userId: string, plan: 'free' | 'pro', email?: string|null, name?: string|null } | null>}
  */
-export async function getSession(_request) {
-  // TODO: Auth.js — const session = await auth(); return session?.user
-  return null;
+export async function getSession() {
+  const session = await auth();
+  if (!session?.user?.id) return null;
+
+  const plan = session.user.plan === 'pro' ? 'pro' : 'free';
+  return {
+    userId: session.user.id,
+    plan,
+    email: session.user.email ?? null,
+    name: session.user.name ?? null,
+  };
 }
 
 /**
- * @param {import('next/server').NextRequest} request
+ * @param {import('next/server').NextRequest} [_request]
  * @param {{ required?: boolean }} [options]
  */
-export async function requireUser(request, options = {}) {
-  const session = await getSession(request);
+export async function requireUser(_request, options = {}) {
+  const session = await getSession();
   if (!session?.userId) {
     if (options.required) {
       const { ApiError } = await import('../guard.js');

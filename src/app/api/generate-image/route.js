@@ -8,7 +8,7 @@ dotenv.config();
 
 export async function POST(request) {
   try {
-    const session = await getSession(request);
+    const session = await getSession();
     await consumeQuota(request, 'imageGen', session ?? {});
     let prompt, mode, imageFile;
     const contentType = request.headers.get('content-type');

@@ -45,7 +45,7 @@ export async function POST(request) {
       );
     }
 
-    const session = await getSession(request);
+    const session = await getSession();
     try {
       await consumeQuota(request, "chat", session ?? {});
     } catch (quotaErr) {
