@@ -145,6 +145,8 @@ export function useChatStream({ setMessages, chatContext = {} }) {
       let fullThinking = '';
       /** @type {WikiSource[]} */
       let sources = [];
+      /** @type {import('../lib/a2ui/build-tool-result-surface.js').A2uiSurfaceState[]} */
+      let streamSurfaces = [...pendingSurfaces];
 
       const controller = new AbortController();
       abortRef.current = controller;
@@ -210,6 +212,10 @@ export function useChatStream({ setMessages, chatContext = {} }) {
               fullContent += payload.content;
               setStreamingContent(fullContent);
             }
+            if (eventType === 'a2ui' && payload.surface) {
+              streamSurfaces = [...streamSurfaces, payload.surface];
+              setStreamingSurfaces(streamSurfaces);
+            }
             if (eventType === 'error') {
               throw new Error(payload.error || '流式响应异常');
             }
@@ -232,7 +238,7 @@ export function useChatStream({ setMessages, chatContext = {} }) {
             ...(fullThinking ? { thinking: fullThinking } : {}),
             ...(sources.length > 0 ? { sources } : {}),
             ...(pendingToolCalls.length > 0 ? { toolCalls: pendingToolCalls } : {}),
-            ...(pendingSurfaces.length > 0 ? { surfaces: pendingSurfaces } : {}),
+            ...(streamSurfaces.length > 0 ? { surfaces: streamSurfaces } : {}),
           },
         ]);
       } catch (err) {
@@ -263,7 +269,7 @@ export function useChatStream({ setMessages, chatContext = {} }) {
               ...(fullThinking ? { thinking: fullThinking } : {}),
               ...(sources.length > 0 ? { sources } : {}),
               ...(pendingToolCalls.length > 0 ? { toolCalls: pendingToolCalls } : {}),
-              ...(pendingSurfaces.length > 0 ? { surfaces: pendingSurfaces } : {}),
+              ...(streamSurfaces.length > 0 ? { surfaces: streamSurfaces } : {}),
             },
           ]);
         } else {
@@ -278,7 +284,7 @@ export function useChatStream({ setMessages, chatContext = {} }) {
                 ? `转换已完成，但解说生成失败：${errMsg}`
                 : errMsg,
               ...(pendingToolCalls.length > 0 ? { toolCalls: pendingToolCalls } : {}),
-              ...(pendingSurfaces.length > 0 ? { surfaces: pendingSurfaces } : {}),
+              ...(streamSurfaces.length > 0 ? { surfaces: streamSurfaces } : {}),
             },
           ]);
         }

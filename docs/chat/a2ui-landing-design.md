@@ -1,7 +1,7 @@
 # MediaFlow AI 对话助手 · A2UI 落地设计文档
 
-> **版本**：v0.3  
-> **状态**：P0/P1 已落地（P2–P3 规划中）  
+> **版本**：v0.4  
+> **状态**：P0/P1/P2 已落地（P3 规划中）  
 > **关联页面**：`/chat`、悬浮窗 `AiChatAssistant`  
 > **协议基准**：[A2UI v0.9](https://a2ui.org/)（声明式 Generative UI）  
 > **最后更新**：2026-06-03
@@ -393,12 +393,12 @@ LLM 流式输出 A2UI（P2）：在 delta 解析层增加「结构化块检测�
 - [x] 数字人 `awaitingA2uiAction` → `idle`  
 - [x] `NEXT_PUBLIC_A2UI_PARAM_FORM=0` 关闭参数表单
 
-### P2：LLM 生成 A2UI（5–8 天）
+### P2：LLM 生成 A2UI（5–8 天）✅ 已完成
 
-- [ ] `catalog-rules.txt` + prompt 注入  
-- [ ] `validator.js` + 非法 JSON fallback  
-- [ ] `route.js` 流式解析 A2UI 块  
-- [ ] 命理三段式、教程 Steps 场景试点
+- [x] `catalog-rules.txt` + 辅助非流式 Ark 请求  
+- [x] `validator.js` + 命理 fallback 卡片  
+- [x] `route.js` 推送 SSE `a2ui` 事件；`useChatStream` 消费  
+- [x] 命理摘要卡 + 教程 `Steps` 试点（`A2UI_LLM_ENABLED=1` 开启）
 
 ### P3：生态扩展（可选）
 

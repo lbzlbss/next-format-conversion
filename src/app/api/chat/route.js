@@ -10,6 +10,7 @@ import {
   formatWikiContext,
   chunksToSources,
 } from "../_lib/wiki/search.js";
+import { fetchLlmSurfaces } from "./_lib/fetch-llm-surfaces.js";
 
 function buildSystemPrompt() {
   const siteName = getSiteName();
@@ -124,6 +125,15 @@ export async function POST(request) {
 
         if (sources.length > 0) {
           push("sources", { items: sources });
+        }
+
+        try {
+          const llmSurfaces = await fetchLlmSurfaces(userContent, { toolKey });
+          for (const surface of llmSurfaces) {
+            push("a2ui", { surface });
+          }
+        } catch (e) {
+          console.error("[chat] a2ui llm surfaces", e);
         }
 
         const reader = arkRes.body?.getReader();

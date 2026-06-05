@@ -2,7 +2,7 @@
 
 | 文档 | 说明 |
 |------|------|
-| [a2ui-landing-design.md](./a2ui-landing-design.md) | A2UI Generative UI 落地设计（P0 已落地，P1–P3 规划） |
+| [a2ui-landing-design.md](./a2ui-landing-design.md) | A2UI Generative UI 落地设计（P0–P2 已落地） |
 | [../digital-human/tech-spec.md](../digital-human/tech-spec.md) | 3D 数字人技术规格 |
 | [../articles/digital-human-vrm-juejin.md](../articles/digital-human-vrm-juejin.md) | 数字人掘金稿 |
 

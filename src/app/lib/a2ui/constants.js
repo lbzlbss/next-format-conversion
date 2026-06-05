@@ -7,3 +7,6 @@ export const A2UI_ENABLED = process.env.NEXT_PUBLIC_A2UI_ENABLED !== '0';
 /** P1：模糊意图先展示 ParamForm；设 NEXT_PUBLIC_A2UI_PARAM_FORM=0 关闭 */
 export const A2UI_PARAM_FORM_ENABLED =
   A2UI_ENABLED && process.env.NEXT_PUBLIC_A2UI_PARAM_FORM !== '0';
+
+/** P2：服务端 LLM 生成 UI，需 A2UI_LLM_ENABLED=1（仅 API 侧） */
+export const A2UI_LLM_ENABLED = process.env.A2UI_LLM_ENABLED === '1';

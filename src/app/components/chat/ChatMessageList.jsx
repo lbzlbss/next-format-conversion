@@ -107,7 +107,6 @@ export default function ChatMessageList({
                   ))}
                 </div>
               ) : null}
-              <div className="whitespace-pre-wrap break-words">{String(m.content)}</div>
               {m.role === 'assistant' && A2UI_ENABLED && Array.isArray(m.surfaces) && m.surfaces.length > 0 ? (
                 <A2uiSurfaceHost
                   surfaces={m.surfaces}
@@ -116,6 +115,7 @@ export default function ChatMessageList({
                   onSurfaceAction={onSurfaceAction}
                 />
               ) : null}
+              <div className="whitespace-pre-wrap break-words">{String(m.content)}</div>
               {m.role === 'assistant' && !A2UI_ENABLED && Array.isArray(m.toolCalls)
                 ? m.toolCalls.map((tc) => (
                     <ToolResultCard key={String(tc.id)} toolCall={tc} />

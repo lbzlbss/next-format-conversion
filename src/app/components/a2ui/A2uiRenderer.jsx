@@ -243,6 +243,25 @@ function renderNode(
         </div>
       );
     }
+    case 'Steps': {
+      const items = Array.isArray(node.items) ? node.items : [];
+      return (
+        <ol className="ml-4 list-decimal space-y-2 text-mf-text">
+          {items.map((item, idx) => {
+            if (!item || typeof item !== 'object') return null;
+            const step = /** @type {Record<string, unknown>} */ (item);
+            const title = String(resolveProp(step.title, dataModel) ?? '');
+            const desc = String(resolveProp(step.description, dataModel) ?? '');
+            return (
+              <li key={idx} className="pl-1">
+                {title ? <div className="font-medium">{title}</div> : null}
+                {desc ? <div className="text-mf-muted">{desc}</div> : null}
+              </li>
+            );
+          })}
+        </ol>
+      );
+    }
     default:
       return null;
   }
