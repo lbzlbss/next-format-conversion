@@ -4,6 +4,8 @@ import Link from 'next/link';
 import { Alert, Button, Form, Input } from 'antd';
 import AuthCard from '../../components/auth/AuthCard';
 
+export const dynamic = 'force-dynamic';
+
 export default function ForgotPasswordPage() {
   return (
     <AuthCard

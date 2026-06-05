@@ -7,6 +7,8 @@ import { signIn } from 'next-auth/react';
 import { Button, Checkbox, Form, Input, message } from 'antd';
 import AuthCard from '../../components/auth/AuthCard';
 
+export const dynamic = 'force-dynamic';
+
 export default function LoginPage() {
   const [form] = Form.useForm();
   const [loading, setLoading] = useState(false);
