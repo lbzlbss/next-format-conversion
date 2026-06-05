@@ -92,7 +92,11 @@ export async function runGenerateImageTool(prompt) {
   });
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
-    throw new Error(err.error || `文生图失败 (${res.status})`);
+    const msg = err.message || err.error || `文生图失败 (${res.status})`;
+    const e = new Error(msg);
+    e.code = err.code;
+    e.detail = err.detail;
+    throw e;
   }
   const data = await res.json();
   if (!data?.imageUrl) {

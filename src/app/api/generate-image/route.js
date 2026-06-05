@@ -1,10 +1,15 @@
 import { NextResponse } from 'next/server';
 import * as dotenv from 'dotenv';
+import { getSession } from '../_lib/auth/session.js';
+import { consumeQuota } from '../_lib/quota/index.js';
+import { ApiError, toErrorResponse } from '../_lib/guard.js';
 
 dotenv.config();
 
 export async function POST(request) {
   try {
+    const session = await getSession(request);
+    await consumeQuota(request, 'imageGen', session ?? {});
     let prompt, mode, imageFile;
     const contentType = request.headers.get('content-type');
 
@@ -89,6 +94,9 @@ export async function POST(request) {
 
     return NextResponse.json({ imageUrl });
   } catch (error) {
+    if (error instanceof ApiError) {
+      return toErrorResponse(error);
+    }
     console.error('生成图片失败:', error);
     return NextResponse.json({ error: '生成图片失败，请稍后重试' }, { status: 500 });
   }

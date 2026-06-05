@@ -6,6 +6,7 @@ import { A2UI_ENABLED } from '../../lib/a2ui/constants.js';
 import { hasWikiA2uiSurface } from '../../lib/a2ui/build-wiki-sources-surface.js';
 import ChatRoleAvatar from './ChatRoleAvatar';
 import WikiSources from './WikiSources';
+import AuthPromptCard from '../auth/AuthPromptCard';
 import ChatPdfButton from './ChatPdfButton';
 import ToolResultCard from './ToolResultCard';
 
@@ -106,6 +107,14 @@ export default function ChatMessageList({
                 />
               ) : null}
               <div className="whitespace-pre-wrap break-words">{String(m.content)}</div>
+              {m.role === 'assistant' && m.authPrompt ? (
+                <div className="mt-2">
+                  <AuthPromptCard
+                    message={m.authPrompt.message}
+                    detail={m.authPrompt.detail}
+                  />
+                </div>
+              ) : null}
               {m.role === 'assistant' && !A2UI_ENABLED && Array.isArray(m.toolCalls)
                 ? m.toolCalls.map((tc) => (
                     <ToolResultCard key={String(tc.id)} toolCall={tc} />

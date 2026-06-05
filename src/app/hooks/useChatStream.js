@@ -192,7 +192,10 @@ export function useChatStream({ setMessages, chatContext = {} }) {
 
         if (!res.ok) {
           const err = await res.json().catch(() => ({}));
-          throw new Error(err.error || res.statusText);
+          const e = new Error(err.message || err.error || res.statusText);
+          e.code = err.code;
+          e.detail = err.detail;
+          throw e;
         }
 
         const reader = res.body?.getReader();
@@ -292,6 +295,9 @@ export function useChatStream({ setMessages, chatContext = {} }) {
               content: pendingToolCalls.some((t) => t.status === 'success')
                 ? `转换已完成，但解说生成失败：${errMsg}`
                 : errMsg,
+              ...(err?.code === 'QUOTA_EXCEEDED'
+                ? { authPrompt: { message: errMsg, detail: err.detail } }
+                : {}),
               ...(pendingToolCalls.length > 0 ? { toolCalls: pendingToolCalls } : {}),
               ...(streamSurfaces.length > 0 ? { surfaces: streamSurfaces } : {}),
             },

@@ -115,6 +115,9 @@ export function useChatComposer({ setMessages, chatContext = {} }) {
             role: 'assistant',
             content: toolCall.error,
             toolCalls: [toolCall],
+            ...(err?.code === 'QUOTA_EXCEEDED'
+              ? { authPrompt: { message: toolCall.error, detail: err.detail } }
+              : {}),
             ...(A2UI_ENABLED ? { surfaces: buildToolResultSurfaces([toolCall]) } : {}),
           },
         ]);
@@ -333,6 +336,9 @@ export function useChatComposer({ setMessages, chatContext = {} }) {
             role: 'assistant',
             content: toolCall.error,
             toolCalls: [toolCall],
+            ...(err?.code === 'QUOTA_EXCEEDED'
+              ? { authPrompt: { message: toolCall.error, detail: err.detail } }
+              : {}),
             ...(A2UI_ENABLED ? { surfaces: buildToolResultSurfaces([toolCall]) } : {}),
           },
         ]);

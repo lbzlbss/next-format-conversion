@@ -15,6 +15,9 @@ import {
 } from "../_lib/wiki/query-utils.js";
 import { loadSystemPrompt } from "./_lib/load-system-prompt.js";
 import { fetchLlmSurfaces } from "./_lib/fetch-llm-surfaces.js";
+import { getSession } from "../_lib/auth/session.js";
+import { consumeQuota } from "../_lib/quota/index.js";
+import { ApiError, toErrorResponse } from "../_lib/guard.js";
 
 function sseEncode(event, data) {
   return `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`;
@@ -40,6 +43,16 @@ export async function POST(request) {
         { error: "最后一条用户消息不能为空" },
         { status: 400 },
       );
+    }
+
+    const session = await getSession(request);
+    try {
+      await consumeQuota(request, "chat", session ?? {});
+    } catch (quotaErr) {
+      if (quotaErr instanceof ApiError) {
+        return toErrorResponse(quotaErr);
+      }
+      throw quotaErr;
     }
 
     const apiKey = getChatApiKey();

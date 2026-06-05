@@ -369,6 +369,12 @@ const HomePage = () => {
                 <EditOutlined />
                 AI 对话助手
               </Link>
+              <Link href="/login" className="mf-sidebar-quick-link">
+                登录
+              </Link>
+              <Link href="/register" className="mf-sidebar-quick-link">
+                注册（提升额度）
+              </Link>
             </div>
 
             <p className="mt-3 text-[10px] leading-relaxed text-mf-sidebar-muted">
@@ -407,6 +413,18 @@ const HomePage = () => {
               >
                 <BookOutlined className="text-sm" />
                 <span className="hidden sm:inline">知识库</span>
+              </Link>
+              <Link
+                href="/login"
+                className="mf-focus-ring rounded-lg border border-mf-border px-2.5 py-2 text-xs font-medium text-mf-text transition hover:border-mf-cta hover:text-mf-cta sm:px-3"
+              >
+                登录
+              </Link>
+              <Link
+                href="/register"
+                className="mf-focus-ring hidden rounded-lg bg-mf-cta px-2.5 py-2 text-xs font-semibold text-white transition hover:bg-mf-cta-hover sm:inline-flex sm:px-3"
+              >
+                注册
               </Link>
               <button
                 type="button"

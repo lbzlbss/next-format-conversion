@@ -1,5 +1,6 @@
-import React, { useState } from 'react';
-import { Button, Input, Upload, message, Card, Space, Progress, Radio } from 'antd';
+import React, { useState, useEffect, useCallback } from 'react';
+import Link from 'next/link';
+import { Button, Input, Upload, message, Card, Space, Progress, Radio, Alert } from 'antd';
 import { UploadOutlined, EditOutlined, PictureOutlined, CopyOutlined } from '@ant-design/icons';
 import axios from 'axios';
 
@@ -12,6 +13,20 @@ const ImageGenerate = () => {
   const [progress, setProgress] = useState(0);
   const [mode, setMode] = useState('text2image'); // text2image or image2image
   const [fileList, setFileList] = useState([]);
+  const [quota, setQuota] = useState(null);
+
+  const refreshQuota = useCallback(async () => {
+    try {
+      const res = await fetch('/api/quota/usage?metric=imageGen');
+      if (res.ok) setQuota(await res.json());
+    } catch {
+      /* ignore */
+    }
+  }, []);
+
+  useEffect(() => {
+    refreshQuota();
+  }, [refreshQuota]);
 
   const handleFileChange = (info) => {
     setFileList(info.fileList);
@@ -53,9 +68,13 @@ const ImageGenerate = () => {
 
       setImageUrl(response.data.imageUrl);
       message.success('图片生成成功！');
+      refreshQuota();
     } catch (error) {
       console.error('生成图片失败:', error);
-      message.error('生成图片失败，请稍后重试');
+      const data = error?.response?.data;
+      const msg = data?.message || data?.error || '生成图片失败，请稍后重试';
+      message.error(msg);
+      if (data?.code === 'QUOTA_EXCEEDED') refreshQuota();
     } finally {
       setLoading(false);
       setProgress(0);
@@ -126,6 +145,27 @@ const ImageGenerate = () => {
           boxShadow: '0 4px 20px rgba(0, 0, 0, 0.1)'
         }}
       >
+        {quota ? (
+          <Alert
+            type={quota.remaining > 0 ? 'info' : 'warning'}
+            showIcon
+            className="mb-4"
+            message={
+              quota.tier === 'guest'
+                ? `游客文生图试用：今日剩余 ${quota.remaining}/${quota.limit} 次`
+                : `今日文生图剩余 ${quota.remaining}/${quota.limit} 次`
+            }
+            description={
+              quota.tier === 'guest' && quota.remaining === 0 ? (
+                <span>
+                  试用已用完，<Link href="/register">注册</Link> 或 <Link href="/login">登录</Link> 可获得更多额度。
+                </span>
+              ) : (
+                '额度按 UTC 日重置。'
+              )
+            }
+          />
+        ) : null}
         <div style={{ marginBottom: '20px' }}>
           <Radio.Group 
             value={mode} 
