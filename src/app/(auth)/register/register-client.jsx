@@ -5,7 +5,7 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { signIn } from 'next-auth/react';
 import { Alert, Button, Checkbox, Form, Input, message } from 'antd';
-import AuthCard from '../../../components/auth/AuthCard';
+import AuthCard from '../../components/auth/AuthCard';
 
 export default function RegisterClient() {
   const [form] = Form.useForm();

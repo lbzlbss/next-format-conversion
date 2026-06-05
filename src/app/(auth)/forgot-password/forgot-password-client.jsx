@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { Alert, Button, Form, Input } from 'antd';
-import AuthCard from '../../../components/auth/AuthCard';
+import AuthCard from '../../components/auth/AuthCard';
 
 export default function ForgotPasswordClient() {
   return (
