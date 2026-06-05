@@ -4,7 +4,7 @@ import Link from 'next/link';
 import { BookOutlined } from '@ant-design/icons';
 
 /**
- * @param {{ sources: Array<{ slug: string, title: string }> }} props
+ * @param {{ sources: Array<{ slug: string, title: string, anchor?: string }> }} props
  */
 export default function WikiSources({ sources }) {
   if (!sources?.length) return null;
@@ -17,8 +17,8 @@ export default function WikiSources({ sources }) {
       </span>
       {sources.map((s) => (
         <Link
-          key={s.slug}
-          href={`/wiki/${s.slug}`}
+          key={`${s.slug}-${s.anchor || ''}`}
+          href={`/wiki/${s.slug}${s.anchor ? `#${s.anchor}` : ''}`}
           className="rounded-md bg-mf-accent-soft px-2 py-0.5 text-[11px] font-medium text-mf-accent-soft-fg hover:opacity-90"
         >
           {s.title}

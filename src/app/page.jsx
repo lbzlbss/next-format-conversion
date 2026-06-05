@@ -58,9 +58,16 @@ const NAV_GROUPS = [
 /** 工具 nav key → Wiki slug */
 const WIKI_SLUG_BY_TOOL = {
   gifToWebp: 'gif-to-webp',
+  gifCompress: 'gif-compress',
+  gifToMp4: 'gif-to-mp4',
   mp4Compress: 'mp4-compress',
+  mp4FirstFrame: 'mp4-first-frame',
+  imageCompress: 'image-compress',
   imageGenerate: 'image-generate',
   svgaTool: 'svga-tool',
+  vapTool: 'vap-tool',
+  videoWatermark: 'video-watermark',
+  assetZipConvert: 'asset-zip-convert',
 };
 
 const TOOL_DESC = {

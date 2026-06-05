@@ -39,7 +39,8 @@ export const CHAT_TOOLS = {
   [CHAT_TOOL_IDS.GIF_COMPRESS]: {
     id: CHAT_TOOL_IDS.GIF_COMPRESS,
     label: 'GIF 压缩',
-    toolKey: null,
+    toolKey: 'gifCompress',
+    wikiSlug: 'gif-compress',
     endpoint: '/api/compress-gif',
     maxBytes: CHAT_MAX_BYTES.gif,
     needsFile: true,
@@ -50,7 +51,8 @@ export const CHAT_TOOLS = {
   [CHAT_TOOL_IDS.GIF_TO_MP4]: {
     id: CHAT_TOOL_IDS.GIF_TO_MP4,
     label: 'GIF 转 MP4',
-    toolKey: null,
+    toolKey: 'gifToMp4',
+    wikiSlug: 'gif-to-mp4',
     endpoint: '/api/gif-to-mp4',
     maxBytes: CHAT_MAX_BYTES.gif,
     needsFile: true,
@@ -88,7 +90,8 @@ export const CHAT_TOOLS = {
   [CHAT_TOOL_IDS.IMAGE_COMPRESS]: {
     id: CHAT_TOOL_IDS.IMAGE_COMPRESS,
     label: '图片压缩',
-    toolKey: null,
+    toolKey: 'imageCompress',
+    wikiSlug: 'image-compress',
     endpoint: '/api/compress-image',
     maxBytes: CHAT_MAX_BYTES.image,
     needsFile: true,

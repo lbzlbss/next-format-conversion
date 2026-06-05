@@ -1,5 +1,8 @@
 # LLM Wiki 接入设计方案
 
+> **实现架构（现行）** 见 [llm-wiki-architecture.md](./llm-wiki-architecture.md)。  
+> 本文档保留原始需求与路线图。
+
 > 面向 `next-format-conversion` 项目，将站点操作手册、工具参数说明、命理断语库等知识以 **Wiki + RAG** 方式接入 AI 对话助手，提升回答准确性与可维护性。
 
 ---

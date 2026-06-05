@@ -247,10 +247,11 @@ function renderNode(
     case 'WikiRef': {
       const slug = String(resolveProp(node.slug, dataModel) ?? '');
       const title = String(resolveProp(node.title, dataModel) ?? slug);
+      const anchor = String(resolveProp(node.anchor, dataModel) ?? '').trim();
       if (!slug) return null;
       return (
         <Link
-          href={`/wiki/${slug}`}
+          href={`/wiki/${slug}${anchor ? `#${anchor}` : ''}`}
           className="inline-flex items-center gap-1 rounded-md bg-mf-accent-soft px-2 py-1 text-[11px] font-medium text-mf-accent-soft-fg hover:opacity-90"
         >
           <BookOutlined className="text-[10px]" />

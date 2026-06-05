@@ -1,8 +1,12 @@
 import { loadWikiIndex } from "./load-index.js";
-import { detectIntent, categoriesForIntent } from "./intent.js";
+import { resolveWikiIntent, categoriesForIntent } from "./intent.js";
+import { expandWikiQuery } from "./query-utils.js";
+import { slugifyHeading } from "../../../components/wiki/markdown-utils.js";
 
 const MIN_SCORE = 0.12;
+const MIN_TOP_SCORE = 2.0;
 const TOOL_KEY_BOOST = 0.35;
+const MAX_CONTEXT_CHARS = 2800;
 
 /** @param {string} text */
 function tokenize(text) {
@@ -52,19 +56,30 @@ function scoreChunk(query, queryTokens, chunk, toolKey) {
 
 /**
  * @param {string} query
- * @param {{ limit?: number, toolKey?: string|null, useWiki?: boolean }} [options]
+ * @param {{
+ *   limit?: number,
+ *   toolKey?: string|null,
+ *   useWiki?: boolean,
+ *   messages?: Array<{ role: string, content: string }>|null,
+ * }} [options]
  */
 export async function searchWiki(query, options = {}) {
-  const { limit = 3, toolKey = null, useWiki = true } = options;
+  const {
+    limit = 3,
+    toolKey = null,
+    useWiki = true,
+    messages = null,
+  } = options;
   const trimmed = query?.trim() || "";
 
   if (!useWiki || !trimmed) {
-    return { chunks: [], intent: "chitchat" };
+    return { chunks: [], intent: "chitchat", topScore: 0 };
   }
 
-  const intent = detectIntent(trimmed);
+  const expanded = expandWikiQuery(trimmed);
+  const intent = resolveWikiIntent(expanded, messages);
   if (intent === "chitchat") {
-    return { chunks: [], intent };
+    return { chunks: [], intent, topScore: 0 };
   }
 
   const index = await loadWikiIndex();
@@ -75,7 +90,7 @@ export async function searchWiki(query, options = {}) {
     pool = pool.filter((c) => allowedCategories.includes(c.category));
   }
 
-  const queryTokens = tokenize(trimmed);
+  const queryTokens = tokenize(expanded);
   const scored = pool
     .map((chunk) => ({
       slug: chunk.slug,
@@ -83,10 +98,15 @@ export async function searchWiki(query, options = {}) {
       heading: chunk.heading,
       content: chunk.content,
       category: chunk.category,
-      score: scoreChunk(trimmed, queryTokens, chunk, toolKey),
+      score: scoreChunk(expanded, queryTokens, chunk, toolKey),
     }))
     .filter((c) => c.score >= MIN_SCORE)
     .sort((a, b) => b.score - a.score);
+
+  const topScore = scored[0]?.score ?? 0;
+  if (topScore < MIN_TOP_SCORE) {
+    return { chunks: [], intent, topScore };
+  }
 
   const seen = new Set();
   const chunks = [];
@@ -98,7 +118,7 @@ export async function searchWiki(query, options = {}) {
     if (chunks.length >= limit) break;
   }
 
-  return { chunks, intent };
+  return { chunks, intent, topScore };
 }
 
 /**
@@ -107,14 +127,31 @@ export async function searchWiki(query, options = {}) {
 export function formatWikiContext(chunks) {
   if (!chunks?.length) return "";
 
-  const body = chunks
-    .map(
-      (c, i) =>
-        `[${i + 1}] ${c.title}${c.heading ? ` > ${c.heading}` : ""}\n${c.content}`,
-    )
-    .join("\n---\n");
+  const parts = [];
+  let used = 0;
+  const header = "\n\n【参考资料】\n";
+  const footer =
+    "\n\n请优先依据上述资料回答；若资料不足以回答，请明确说明，勿编造文档中未出现的内容。";
+  const budget = MAX_CONTEXT_CHARS - header.length - footer.length;
 
-  return `\n\n【参考资料】\n${body}\n\n请优先依据上述资料回答；若资料不足以回答，请明确说明，勿编造文档中未出现的内容。`;
+  for (let i = 0; i < chunks.length; i++) {
+    const c = chunks[i];
+    const block = `[${i + 1}] ${c.title}${c.heading ? ` > ${c.heading}` : ""}\n${c.content}`;
+    const sep = parts.length > 0 ? "\n---\n" : "";
+    if (used + sep.length + block.length > budget) {
+      const remain = budget - used - sep.length;
+      if (remain > 120) {
+        parts.push(`${sep}${block.slice(0, remain)}…`);
+      }
+      break;
+    }
+    parts.push(`${sep}${block}`);
+    used += sep.length + block.length;
+  }
+
+  if (parts.length === 0) return "";
+
+  return `${header}${parts.join("")}${footer}`;
 }
 
 /**
@@ -124,9 +161,26 @@ export function chunksToSources(chunks) {
   const seen = new Set();
   const items = [];
   for (const c of chunks) {
-    if (seen.has(c.slug)) continue;
-    seen.add(c.slug);
-    items.push({ slug: c.slug, title: c.title });
+    const key = `${c.slug}::${c.heading || ""}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+
+    const heading = c.heading?.trim();
+    const leaf = heading?.includes(" > ")
+      ? heading.split(" > ").pop()
+      : heading;
+    const anchor =
+      leaf && leaf !== "概述" ? slugifyHeading(leaf) : null;
+    const label =
+      leaf && leaf !== "概述" && leaf !== c.title
+        ? `${c.title} · ${leaf}`
+        : c.title;
+
+    items.push({
+      slug: c.slug,
+      title: label,
+      ...(anchor ? { anchor } : {}),
+    });
   }
   return items;
 }

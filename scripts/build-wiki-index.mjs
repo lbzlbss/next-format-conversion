@@ -10,7 +10,17 @@ const WIKI_DIR = path.join(ROOT, "content/wiki");
 /** 放在 data/ 而非 public/，避免 dev 时写入 public 触发整页刷新 */
 const OUT_FILE = path.join(ROOT, "data/wiki-index.json");
 
-const MAX_CHUNK_CHARS = 1200;
+const MAX_CHUNK_CHARS = 1000;
+const WINDOW_OVERLAP = 120;
+
+/** 构建时剥离 HTML，降低 Prompt 注入风险 */
+function stripHtml(text) {
+  return String(text || "")
+    .replace(/<script[\s\S]*?<\/script>/gi, "")
+    .replace(/<style[\s\S]*?<\/style>/gi, "")
+    .replace(/<[^>]+>/g, "")
+    .trim();
+}
 
 function parseFrontmatter(raw) {
   const match = raw.match(/^---\r?\n([\s\S]*?)\r?\n---\r?\n([\s\S]*)$/);
@@ -40,44 +50,100 @@ function parseFrontmatter(raw) {
 
 function slugifyHeading(text) {
   return text
+    .trim()
     .toLowerCase()
-    .replace(/[^\w\u4e00-\u9fff]+/g, "-")
+    .replace(/\s+/g, "-")
+    .replace(/[^\w\u4e00-\u9fff-]/g, "")
     .replace(/^-|-$/g, "");
 }
 
-function chunkByH2(slug, title, category, tags, toolKey, body) {
+/** 超长段落按窗口切分，尽量在空行处断开 */
+function splitLongText(text, maxLen = MAX_CHUNK_CHARS) {
+  const trimmed = text.trim();
+  if (!trimmed) return [];
+  if (trimmed.length <= maxLen) return [trimmed];
+
+  const parts = [];
+  let start = 0;
+  while (start < trimmed.length) {
+    let end = Math.min(start + maxLen, trimmed.length);
+    if (end < trimmed.length) {
+      const breakAt = trimmed.lastIndexOf("\n\n", end);
+      if (breakAt > start + maxLen * 0.45) end = breakAt;
+    }
+    const piece = trimmed.slice(start, end).trim();
+    if (piece) parts.push(piece);
+    if (end >= trimmed.length) break;
+    start = Math.max(end - WINDOW_OVERLAP, start + 1);
+  }
+  return parts;
+}
+
+function pushChunks(chunks, base, content) {
+  const pieces = splitLongText(content);
+  const anchorBase = slugifyHeading(base.heading) || "section";
+  pieces.forEach((piece, i) => {
+    chunks.push({
+      ...base,
+      id:
+        pieces.length > 1
+          ? `${base.slug}#${anchorBase}-${i + 1}`
+          : `${base.slug}#${anchorBase}`,
+      content: piece,
+    });
+  });
+}
+
+function chunkByH2H3(slug, title, category, tags, toolKey, body) {
   const chunks = [];
   const sections = body.split(/^## /m);
   const intro = sections[0]?.trim();
   if (intro) {
-    chunks.push({
-      id: `${slug}#intro`,
+    pushChunks(chunks, {
       slug,
       title,
       heading: "概述",
       category,
       tags: tags || [],
       toolKey: toolKey || null,
-      content: intro.slice(0, MAX_CHUNK_CHARS),
-    });
+    }, intro);
   }
+
   for (let i = 1; i < sections.length; i++) {
     const part = sections[i];
     const nl = part.indexOf("\n");
-    const heading = nl >= 0 ? part.slice(0, nl).trim() : part.trim();
-    const content = (nl >= 0 ? part.slice(nl + 1) : "").trim();
-    if (!content) continue;
-    const anchor = slugifyHeading(heading) || `section-${i}`;
-    chunks.push({
-      id: `${slug}#${anchor}`,
-      slug,
-      title,
-      heading,
-      category,
-      tags: tags || [],
-      toolKey: toolKey || null,
-      content: content.slice(0, MAX_CHUNK_CHARS),
-    });
+    const h2Heading = nl >= 0 ? part.slice(0, nl).trim() : part.trim();
+    const sectionBody = (nl >= 0 ? part.slice(nl + 1) : "").trim();
+    if (!sectionBody) continue;
+
+    const h3Parts = sectionBody.split(/^### /m);
+    const h2Intro = h3Parts[0]?.trim();
+    if (h2Intro) {
+      pushChunks(chunks, {
+        slug,
+        title,
+        heading: h2Heading,
+        category,
+        tags: tags || [],
+        toolKey: toolKey || null,
+      }, h2Intro);
+    }
+
+    for (let j = 1; j < h3Parts.length; j++) {
+      const sub = h3Parts[j];
+      const subNl = sub.indexOf("\n");
+      const h3Heading = subNl >= 0 ? sub.slice(0, subNl).trim() : sub.trim();
+      const h3Content = (subNl >= 0 ? sub.slice(subNl + 1) : "").trim();
+      if (!h3Content) continue;
+      pushChunks(chunks, {
+        slug,
+        title,
+        heading: `${h2Heading} > ${h3Heading}`,
+        category,
+        tags: tags || [],
+        toolKey: toolKey || null,
+      }, h3Content);
+    }
   }
   return chunks;
 }
@@ -106,7 +172,8 @@ function main() {
 
   for (const file of files) {
     const raw = fs.readFileSync(file, "utf8");
-    const { meta, body } = parseFrontmatter(raw);
+    const { meta, body: rawBody } = parseFrontmatter(raw);
+  const body = stripHtml(rawBody);
     if (!meta.slug || !meta.title) {
       console.warn(`[wiki:build] skip ${file}: missing slug/title`);
       continue;
@@ -128,7 +195,7 @@ function main() {
     });
 
     chunks.push(
-      ...chunkByH2(slug, meta.title, category, tags, toolKey, body),
+      ...chunkByH2H3(slug, meta.title, category, tags, toolKey, body),
     );
   }
 

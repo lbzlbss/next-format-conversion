@@ -1,7 +1,7 @@
 import { MEDIAFLOW_CHAT_CATALOG_ID } from './constants.js';
 
 /**
- * @param {Array<{ slug: string, title: string }>} sources
+ * @param {Array<{ slug: string, title: string, anchor?: string }>} sources
  * @returns {import('./build-tool-result-surface.js').A2uiSurfaceState | null}
  */
 export function buildWikiSourcesSurface(sources) {
@@ -23,6 +23,7 @@ export function buildWikiSourcesSurface(sources) {
         component: 'WikiRef',
         slug: s.slug,
         title: s.title,
+        ...(s.anchor ? { anchor: s.anchor } : {}),
       })),
     ],
     dataModel: {

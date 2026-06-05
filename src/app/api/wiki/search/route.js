@@ -10,10 +10,10 @@ export async function GET(request) {
   const toolKey = searchParams.get("toolKey") || null;
   const useWiki = searchParams.get("useWiki") !== "false";
 
-  const { chunks, intent } = await searchWiki(q, { limit, toolKey, useWiki });
+  const { chunks, intent, topScore } = await searchWiki(q, { limit, toolKey, useWiki });
 
   return Response.json(
-    { chunks, intent },
+    { chunks, intent, topScore },
     {
       headers: {
         "Cache-Control": "public, s-maxage=60, stale-while-revalidate=120",
