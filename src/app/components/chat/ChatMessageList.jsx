@@ -1,7 +1,7 @@
 'use client';
 
-import { BulbOutlined } from '@ant-design/icons';
 import A2uiSurfaceHost from '../a2ui/A2uiSurfaceHost';
+import ChatThinkingBlock from './ChatThinkingBlock';
 import { A2UI_ENABLED } from '../../lib/a2ui/constants.js';
 import { hasWikiA2uiSurface } from '../../lib/a2ui/build-wiki-sources-surface.js';
 import ChatRoleAvatar from './ChatRoleAvatar';
@@ -61,15 +61,12 @@ export default function ChatMessageList({
           <ChatRoleAvatar role={String(m.role)} size={isPage ? 40 : 36} />
           <div className={isPage ? 'min-w-0 max-w-[min(85%,720px)]' : 'max-w-[85%]'}>
             {m.thinking ? (
-              <div className="mb-2 rounded-xl border border-mf-border bg-mf-accent-soft px-4 py-3 text-xs text-mf-accent-soft-fg">
-                <div className="mb-1 flex items-center gap-1 font-semibold">
-                  <BulbOutlined />
-                  思考过程
-                </div>
-                <div className="whitespace-pre-wrap break-words opacity-90">
-                  {String(m.thinking)}
-                </div>
-              </div>
+              <ChatThinkingBlock
+                title="思考过程"
+                content={String(m.thinking)}
+                defaultExpanded={false}
+                variant={variant}
+              />
             ) : null}
             <div
               className={
@@ -146,15 +143,13 @@ export default function ChatMessageList({
           <ChatRoleAvatar role="assistant" size={isPage ? 40 : 36} />
           <div className={isPage ? 'min-w-0 max-w-[min(85%,720px)]' : 'max-w-[85%]'}>
             {streamingThinking ? (
-              <div className="mb-2 rounded-xl border border-mf-border bg-mf-accent-soft px-4 py-3 text-xs text-mf-accent-soft-fg">
-                <div className="mb-1 flex items-center gap-1 font-semibold">
-                  <BulbOutlined />
-                  正在思考…
-                </div>
-                <div className="whitespace-pre-wrap break-words opacity-90">
-                  {streamingThinking}
-                </div>
-              </div>
+              <ChatThinkingBlock
+                title="正在思考…"
+                content={streamingThinking}
+                defaultExpanded
+                streaming
+                variant={variant}
+              />
             ) : null}
             <div
               className={
