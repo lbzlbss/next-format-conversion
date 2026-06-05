@@ -1,8 +1,9 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
+import Link from 'next/link';
 import { Button, Select, Slider, Tag } from 'antd';
-import { DownloadOutlined, LoadingOutlined } from '@ant-design/icons';
+import { BookOutlined, DownloadOutlined, LoadingOutlined } from '@ant-design/icons';
 import { resolveDataPath, setDataPath } from '../../lib/a2ui/resolve-path.js';
 
 /**
@@ -240,6 +241,69 @@ function renderNode(
         <div className="flex items-center gap-2 text-mf-muted">
           <LoadingOutlined />
           <span>{text}</span>
+        </div>
+      );
+    }
+    case 'WikiRef': {
+      const slug = String(resolveProp(node.slug, dataModel) ?? '');
+      const title = String(resolveProp(node.title, dataModel) ?? slug);
+      if (!slug) return null;
+      return (
+        <Link
+          href={`/wiki/${slug}`}
+          className="inline-flex items-center gap-1 rounded-md bg-mf-accent-soft px-2 py-1 text-[11px] font-medium text-mf-accent-soft-fg hover:opacity-90"
+        >
+          <BookOutlined className="text-[10px]" />
+          {title}
+        </Link>
+      );
+    }
+    case 'Divider':
+      return <div className="my-1 border-t border-mf-border/70" />;
+    case 'Alert': {
+      const text = String(resolveProp(node.text, dataModel) ?? '');
+      const isWarn = node.variant === 'warning';
+      return (
+        <div
+          className={`rounded-lg px-2 py-1.5 text-[11px] ${
+            isWarn
+              ? 'border border-amber-200 bg-amber-50 text-amber-800'
+              : 'border border-mf-border bg-mf-surface text-mf-muted'
+          }`}
+        >
+          {text}
+        </div>
+      );
+    }
+    case 'Table': {
+      if (variant === 'float') return null;
+      const columns = Array.isArray(node.columns) ? node.columns : [];
+      const rows = Array.isArray(node.rows) ? node.rows : [];
+      if (!columns.length) return null;
+      return (
+        <div className="overflow-x-auto rounded-lg border border-mf-border">
+          <table className="w-full min-w-[280px] text-left text-[11px]">
+            <thead className="bg-mf-canvas text-mf-muted">
+              <tr>
+                {columns.map((col, i) => (
+                  <th key={i} className="px-2 py-1.5 font-medium">
+                    {String(col)}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((row, ri) => (
+                <tr key={ri} className="border-t border-mf-border/60">
+                  {(Array.isArray(row) ? row : []).map((cell, ci) => (
+                    <td key={ci} className="px-2 py-1.5 text-mf-text">
+                      {String(cell ?? '')}
+                    </td>
+                  ))}
+                </tr>
+              ))}
+            </tbody>
+          </table>
         </div>
       );
     }

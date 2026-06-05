@@ -1,7 +1,7 @@
 # MediaFlow AI 对话助手 · A2UI 落地设计文档
 
-> **版本**：v0.4  
-> **状态**：P0/P1/P2 已落地（P3 规划中）  
+> **版本**：v0.5  
+> **状态**：P0–P3 已落地  
 > **关联页面**：`/chat`、悬浮窗 `AiChatAssistant`  
 > **协议基准**：[A2UI v0.9](https://a2ui.org/)（声明式 Generative UI）  
 > **最后更新**：2026-06-03
@@ -400,11 +400,12 @@ LLM 流式输出 A2UI（P2）：在 delta 解析层增加「结构化块检测�
 - [x] `route.js` 推送 SSE `a2ui` 事件；`useChatStream` 消费  
 - [x] 命理摘要卡 + 教程 `Steps` 试点（`A2UI_LLM_ENABLED=1` 开启）
 
-### P3：生态扩展（可选）
+### P3：生态扩展 ✅ 已完成
 
-- [ ] Wiki 操作引导统一 A2UI  
-- [ ] 悬浮窗与全页 Catalog 差异（float 隐藏宽 Table）  
-- [ ] 与 A2A 扩展对齐（远程 Agent UI）
+- [x] Wiki 引用统一为 `WikiRef` A2UI Surface（`buildWikiSourcesSurface`）  
+- [x] `float` 布局过滤宽组件（`Table` 等，`filterSurfaceForVariant`）  
+- [x] 新增 `Divider` / `Alert` / `Table` renderer  
+- [ ] A2A 远程 Agent UI（待业务需求明确后再接）
 
 ---
 

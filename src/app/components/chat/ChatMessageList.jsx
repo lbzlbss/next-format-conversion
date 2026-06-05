@@ -1,9 +1,10 @@
 'use client';
 
-import { Avatar } from 'antd';
-import { RobotOutlined, UserOutlined, BulbOutlined } from '@ant-design/icons';
+import { BulbOutlined } from '@ant-design/icons';
 import A2uiSurfaceHost from '../a2ui/A2uiSurfaceHost';
 import { A2UI_ENABLED } from '../../lib/a2ui/constants.js';
+import { hasWikiA2uiSurface } from '../../lib/a2ui/build-wiki-sources-surface.js';
+import ChatRoleAvatar from './ChatRoleAvatar';
 import WikiSources from './WikiSources';
 import ChatPdfButton from './ChatPdfButton';
 import ToolResultCard from './ToolResultCard';
@@ -57,15 +58,7 @@ export default function ChatMessageList({
           key={String(m.id)}
           className={`flex gap-3 ${m.role === 'user' ? 'flex-row-reverse' : ''}`}
         >
-          <Avatar
-            size={isPage ? 40 : 36}
-            icon={m.role === 'user' ? <UserOutlined /> : <RobotOutlined />}
-            className={
-              m.role === 'user'
-                ? 'shrink-0 !bg-mf-cta'
-                : 'shrink-0 !bg-mf-sidebar'
-            }
-          />
+          <ChatRoleAvatar role={String(m.role)} size={isPage ? 40 : 36} />
           <div className={isPage ? 'min-w-0 max-w-[min(85%,720px)]' : 'max-w-[85%]'}>
             {m.thinking ? (
               <div className="mb-2 rounded-xl border border-mf-border bg-mf-accent-soft px-4 py-3 text-xs text-mf-accent-soft-fg">
@@ -121,7 +114,10 @@ export default function ChatMessageList({
                     <ToolResultCard key={String(tc.id)} toolCall={tc} />
                   ))
                 : null}
-              {m.role === 'assistant' && Array.isArray(m.sources) && m.sources.length > 0 ? (
+              {m.role === 'assistant' &&
+              Array.isArray(m.sources) &&
+              m.sources.length > 0 &&
+              !(A2UI_ENABLED && hasWikiA2uiSurface(m.surfaces)) ? (
                 <WikiSources sources={m.sources} />
               ) : null}
               {m.role === 'assistant' && m.id !== 'welcome' ? (
@@ -147,11 +143,7 @@ export default function ChatMessageList({
 
       {showStreaming ? (
         <div className="flex gap-3">
-          <Avatar
-            size={isPage ? 40 : 36}
-            icon={<RobotOutlined />}
-            className="shrink-0 !bg-mf-sidebar"
-          />
+          <ChatRoleAvatar role="assistant" size={isPage ? 40 : 36} />
           <div className={isPage ? 'min-w-0 max-w-[min(85%,720px)]' : 'max-w-[85%]'}>
             {streamingThinking ? (
               <div className="mb-2 rounded-xl border border-mf-border bg-mf-accent-soft px-4 py-3 text-xs text-mf-accent-soft-fg">
@@ -212,7 +204,10 @@ export default function ChatMessageList({
                   </div>
                 )}
               </div>
-              {streamingSources?.length > 0 ? <WikiSources sources={streamingSources} /> : null}
+              {streamingSources?.length > 0 &&
+              !(A2UI_ENABLED && hasWikiA2uiSurface(streamingSurfaces)) ? (
+                <WikiSources sources={streamingSources} />
+              ) : null}
             </div>
           </div>
         </div>

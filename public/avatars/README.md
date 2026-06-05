@@ -10,6 +10,8 @@ NEXT_PUBLIC_AVATAR_VRM_URL=/avatars/your-model.vrm
 
 未设置环境变量时使用 `/avatars/media-s.vrm`。
 
+对话列表助手头像会从同一 VRM **自动渲染胸像**（`AssistantAvatarPortrait`，全局缓存一次），与左侧 3D 数字人模型一致。
+
 若模型仍显示背面，在 `.env.local` 添加：
 
 ```bash

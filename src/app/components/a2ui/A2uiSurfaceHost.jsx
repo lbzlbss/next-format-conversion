@@ -1,6 +1,8 @@
 'use client';
 
 import dynamic from 'next/dynamic';
+import { useMemo } from 'react';
+import { filterSurfaceForVariant } from '../../lib/a2ui/filter-surface-variant.js';
 
 const A2uiRenderer = dynamic(() => import('./A2uiRenderer.jsx'), { ssr: false });
 
@@ -18,11 +20,16 @@ export default function A2uiSurfaceHost({
   interactiveSurfaceId = null,
   onSurfaceAction,
 }) {
-  if (!surfaces.length) return null;
+  const filtered = useMemo(
+    () => surfaces.map((s) => filterSurfaceForVariant(s, variant)),
+    [surfaces, variant],
+  );
+
+  if (!filtered.length) return null;
 
   return (
     <>
-      {surfaces.map((surface) => {
+      {filtered.map((surface) => {
         const interactive =
           Boolean(interactiveSurfaceId) && surface.surfaceId === interactiveSurfaceId;
         return (

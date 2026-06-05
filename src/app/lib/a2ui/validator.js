@@ -5,6 +5,10 @@ const ALLOWED_COMPONENTS = new Set([
   ...catalog.components,
   'Steps',
   'Row',
+  'WikiRef',
+  'Divider',
+  'Alert',
+  'Table',
 ]);
 
 const MAX_SURFACES = 2;

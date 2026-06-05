@@ -201,6 +201,40 @@ export function frameVrmFullBody(vrm, camera, aspect = 0.55) {
   camera.updateProjectionMatrix();
 }
 
+/**
+ * 胸像取景：用于对话列表等小尺寸头像
+ * @param {import('@pixiv/three-vrm').VRM} vrm
+ * @param {THREE.PerspectiveCamera} camera
+ * @param {number} [aspect=1]
+ */
+export function frameVrmPortrait(vrm, camera, aspect = 1) {
+  vrm.scene.rotation.set(0, 0, 0);
+  vrm.scene.updateWorldMatrix(true, true);
+
+  const box = new THREE.Box3().setFromObject(vrm.scene);
+  const center = box.getCenter(new THREE.Vector3());
+  vrm.scene.position.set(-center.x, -box.min.y, -center.z);
+  vrm.scene.updateWorldMatrix(true, true);
+
+  const head = vrm.humanoid.getNormalizedBoneNode('head');
+  const headY = new THREE.Vector3();
+  if (head) {
+    head.getWorldPosition(headY);
+  } else {
+    headY.set(0, box.max.y * 0.88, 0);
+  }
+
+  camera.fov = 22;
+  const vFovRad = (camera.fov * Math.PI) / 180;
+  const distance = 0.42;
+  const lookY = headY.y - 0.06;
+
+  camera.aspect = Math.max(aspect, 0.5);
+  camera.position.set(0, lookY, getCameraZSign() * distance);
+  camera.lookAt(0, lookY - 0.02, 0);
+  camera.updateProjectionMatrix();
+}
+
 /** @param {import('@pixiv/three-vrm').VRM} vrm @param {AvatarAnimState} from @param {AvatarAnimState} to @param {number} t01 */
 export function blendExpression(vrm, from, to, t01) {
   const em = vrm.expressionManager;

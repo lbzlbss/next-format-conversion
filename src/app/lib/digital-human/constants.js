@@ -5,4 +5,7 @@ export const DEFAULT_AVATAR_VRM_URL =
 /** 相机 Z 方向：VRoid 模型朝 -Z 用 1；若仍见背面可设为 -1 */
 export const AVATAR_CAMERA_Z_SIGN = Number(process.env.NEXT_PUBLIC_AVATAR_CAMERA_Z_SIGN) || 1;
 
+/** 助手对话头像（VRM 胸像渲染缓存；可替换为静态图 URL） */
+export const ASSISTANT_AVATAR_PORTRAIT_SIZE = 128;
+
 /** @typedef {'idle' | 'thinking' | 'speaking'} AvatarAnimState */

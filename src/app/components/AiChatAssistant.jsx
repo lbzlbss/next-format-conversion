@@ -1,7 +1,13 @@
 'use client';
 
 import React, { useState, useRef, useEffect } from 'react';
-import { RobotOutlined, CloseOutlined } from '@ant-design/icons';
+import dynamic from 'next/dynamic';
+import { CloseOutlined } from '@ant-design/icons';
+
+const AssistantAvatarPortrait = dynamic(
+  () => import('./digital-human/AssistantAvatarPortrait.jsx'),
+  { ssr: false },
+);
 import { useChatComposer } from '../hooks/useChatComposer';
 import ChatMessageList from './chat/ChatMessageList';
 import ChatInputArea from './chat/ChatInputArea';
@@ -73,9 +79,7 @@ const AiChatAssistant = () => {
         >
           <div className="flex shrink-0 items-center justify-between border-b border-[#e2e8f0] px-4 py-3">
             <div className="flex items-center gap-2">
-              <div className="grid size-8 shrink-0 place-items-center rounded-lg bg-mf-cta">
-                <RobotOutlined className="text-white" />
-              </div>
+              <AssistantAvatarPortrait size={32} />
               <div className="min-w-0">
                 <div className="truncate text-[14px] font-bold text-[#0f172a]">AI 对话助手</div>
                 <div className="text-[11px] text-[#94a3b8]">创作 · 转换 · 站内工具</div>

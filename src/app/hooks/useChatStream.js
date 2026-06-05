@@ -1,6 +1,8 @@
 'use client';
 
 import { useCallback, useRef, useState } from 'react';
+import { A2UI_ENABLED } from '../lib/a2ui/constants.js';
+import { buildWikiSourcesSurface } from '../lib/a2ui/build-wiki-sources-surface.js';
 
 /**
  * @typedef {{ slug: string, title: string }} WikiSource
@@ -203,6 +205,13 @@ export function useChatStream({ setMessages, chatContext = {} }) {
             if (eventType === 'sources' && Array.isArray(payload.items)) {
               sources = payload.items;
               setStreamingSources(payload.items);
+              if (A2UI_ENABLED) {
+                const wikiSurface = buildWikiSourcesSurface(payload.items);
+                if (wikiSurface) {
+                  streamSurfaces = [...streamSurfaces, wikiSurface];
+                  setStreamingSurfaces(streamSurfaces);
+                }
+              }
             }
             if (eventType === 'thinking' && typeof payload.content === 'string') {
               fullThinking += payload.content;
