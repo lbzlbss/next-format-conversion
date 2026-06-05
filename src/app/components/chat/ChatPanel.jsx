@@ -39,6 +39,9 @@ export default function ChatPanel({ variant = 'page', className = '', toolKey = 
     streamingToolCalls,
     streamingSurfaces,
     runningSurfaces,
+    awaitingA2uiAction,
+    interactiveSurfaceId,
+    handleSurfaceAction,
     send,
     stopStreaming,
     loading: streamLoading,
@@ -54,6 +57,7 @@ export default function ChatPanel({ variant = 'page', className = '', toolKey = 
     toolRunning,
     streamingContent,
     streamingThinking,
+    awaitingA2uiAction,
   });
 
   useEffect(() => {
@@ -102,6 +106,8 @@ export default function ChatPanel({ variant = 'page', className = '', toolKey = 
               streamingToolCalls={streamingToolCalls}
               streamingSurfaces={streamingSurfaces}
               runningSurfaces={runningSurfaces}
+              interactiveSurfaceId={interactiveSurfaceId}
+              onSurfaceAction={handleSurfaceAction}
               loading={busy}
               toolRunning={toolRunning}
               variant="page"
@@ -143,6 +149,8 @@ export default function ChatPanel({ variant = 'page', className = '', toolKey = 
           streamingToolCalls={streamingToolCalls}
           streamingSurfaces={streamingSurfaces}
           runningSurfaces={runningSurfaces}
+          interactiveSurfaceId={interactiveSurfaceId}
+          onSurfaceAction={handleSurfaceAction}
           loading={busy}
           toolRunning={toolRunning}
           variant="float"

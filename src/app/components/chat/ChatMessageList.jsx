@@ -17,6 +17,8 @@ import ToolResultCard from './ToolResultCard';
  *   streamingToolCalls?: import('../../hooks/useChatStream.js').ToolCall[],
  *   streamingSurfaces?: import('../../lib/a2ui/build-tool-result-surface.js').A2uiSurfaceState[],
  *   runningSurfaces?: import('../../lib/a2ui/build-tool-result-surface.js').A2uiSurfaceState[],
+ *   interactiveSurfaceId?: string | null,
+ *   onSurfaceAction?: (surfaceId: string, action: string, dataModel: Record<string, unknown>) => void,
  *   loading?: boolean,
  *   toolRunning?: boolean,
  *   variant?: 'page' | 'float',
@@ -30,6 +32,8 @@ export default function ChatMessageList({
   streamingToolCalls = [],
   streamingSurfaces = [],
   runningSurfaces = [],
+  interactiveSurfaceId = null,
+  onSurfaceAction,
   loading = false,
   toolRunning = false,
   variant = 'page',
@@ -105,7 +109,12 @@ export default function ChatMessageList({
               ) : null}
               <div className="whitespace-pre-wrap break-words">{String(m.content)}</div>
               {m.role === 'assistant' && A2UI_ENABLED && Array.isArray(m.surfaces) && m.surfaces.length > 0 ? (
-                <A2uiSurfaceHost surfaces={m.surfaces} variant={variant} />
+                <A2uiSurfaceHost
+                  surfaces={m.surfaces}
+                  variant={variant}
+                  interactiveSurfaceId={interactiveSurfaceId}
+                  onSurfaceAction={onSurfaceAction}
+                />
               ) : null}
               {m.role === 'assistant' && !A2UI_ENABLED && Array.isArray(m.toolCalls)
                 ? m.toolCalls.map((tc) => (
@@ -163,7 +172,12 @@ export default function ChatMessageList({
               }
             >
               {A2UI_ENABLED && streamingSurfaces.length > 0 ? (
-                <A2uiSurfaceHost surfaces={streamingSurfaces} variant={variant} />
+                <A2uiSurfaceHost
+                  surfaces={streamingSurfaces}
+                  variant={variant}
+                  interactiveSurfaceId={interactiveSurfaceId}
+                  onSurfaceAction={onSurfaceAction}
+                />
               ) : null}
               {!A2UI_ENABLED
                 ? streamingToolCalls.map((tc) => (
@@ -171,7 +185,12 @@ export default function ChatMessageList({
                   ))
                 : null}
               {A2UI_ENABLED && toolRunning && runningSurfaces.length > 0 && streamingSurfaces.length === 0 ? (
-                <A2uiSurfaceHost surfaces={runningSurfaces} variant={variant} />
+                <A2uiSurfaceHost
+                  surfaces={runningSurfaces}
+                  variant={variant}
+                  interactiveSurfaceId={interactiveSurfaceId}
+                  onSurfaceAction={onSurfaceAction}
+                />
               ) : null}
               {!A2UI_ENABLED && toolRunning && !streamingContent && streamingToolCalls.length === 0 ? (
                 <ToolResultCard

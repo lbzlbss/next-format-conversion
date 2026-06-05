@@ -1,8 +1,9 @@
 'use client';
 
-import { Button, Tag } from 'antd';
+import { useCallback, useEffect, useState } from 'react';
+import { Button, Select, Slider, Tag } from 'antd';
 import { DownloadOutlined, LoadingOutlined } from '@ant-design/icons';
-import { resolveDataPath } from '../../lib/a2ui/resolve-path.js';
+import { resolveDataPath, setDataPath } from '../../lib/a2ui/resolve-path.js';
 
 /**
  * @param {unknown} value
@@ -20,15 +21,28 @@ function resolveProp(value, dataModel) {
  * @param {Map<string, import('../../lib/a2ui/build-tool-result-surface.js').A2uiComponentNode>} index
  * @param {Record<string, unknown>} dataModel
  * @param {'page' | 'float'} variant
+ * @param {boolean} interactive
+ * @param {(path: string, value: unknown) => void} [onPatch]
+ * @param {(action: string, dataModel: Record<string, unknown>) => void} [onAction]
  */
-function renderNode(node, index, dataModel, variant) {
+function renderNode(
+  node,
+  index,
+  dataModel,
+  variant,
+  interactive,
+  onPatch,
+  onAction,
+) {
   if (!node) return null;
 
   const childId = typeof node.child === 'string' ? node.child : null;
   const childIds = Array.isArray(node.children) ? node.children : [];
   const renderChild = (id) => {
     const child = index.get(id);
-    return child ? renderNode(child, index, dataModel, variant) : null;
+    return child
+      ? renderNode(child, index, dataModel, variant, interactive, onPatch, onAction)
+      : null;
   };
 
   switch (node.component) {
@@ -48,7 +62,15 @@ function renderNode(node, index, dataModel, variant) {
     }
     case 'Column':
       return (
-        <div className="flex flex-col gap-2">
+        <div className={`flex flex-col gap-2 ${node.id === 'actions' ? 'mt-1 flex-row flex-wrap' : ''}`}>
+          {childIds.map((id) => (
+            <div key={id}>{renderChild(id)}</div>
+          ))}
+        </div>
+      );
+    case 'ParamForm':
+      return (
+        <div className="flex flex-col gap-3 rounded-lg border border-mf-border/80 bg-mf-surface/50 p-3">
           {childIds.map((id) => (
             <div key={id}>{renderChild(id)}</div>
           ))}
@@ -70,6 +92,72 @@ function renderNode(node, index, dataModel, variant) {
       const color = node.color === 'green' ? 'green' : 'default';
       return <Tag color={color}>{text}</Tag>;
     }
+    case 'Slider': {
+      const path = typeof node.path === 'string' ? node.path : '';
+      const raw = path ? resolveDataPath(dataModel, path) : node.value;
+      const value = typeof raw === 'number' ? raw : Number(raw) || 0;
+      const min = typeof node.min === 'number' ? node.min : 0;
+      const max = typeof node.max === 'number' ? node.max : 100;
+      const step = typeof node.step === 'number' ? node.step : 1;
+      const label = String(node.label || '');
+
+      if (!interactive || !path || !onPatch) {
+        return (
+          <div className="text-mf-muted">
+            {label}: {value}
+          </div>
+        );
+      }
+
+      return (
+        <div>
+          <div className="mb-1 flex justify-between text-[11px] text-mf-text">
+            <span>{label}</span>
+            <span className="font-medium text-mf-cta">{value}</span>
+          </div>
+          <Slider
+            min={min}
+            max={max}
+            step={step}
+            value={value}
+            onChange={(v) => onPatch(path, v)}
+            className="!mb-0"
+          />
+        </div>
+      );
+    }
+    case 'Select': {
+      const path = typeof node.path === 'string' ? node.path : '';
+      const raw = path ? resolveDataPath(dataModel, path) : node.value;
+      const value = raw == null ? '' : String(raw);
+      const label = String(node.label || '');
+      const options = Array.isArray(node.options) ? node.options : [];
+
+      if (!interactive || !path || !onPatch) {
+        const opt = options.find((o) => String(o.value) === value);
+        return (
+          <div className="text-mf-muted">
+            {label}: {opt?.label || value || '—'}
+          </div>
+        );
+      }
+
+      return (
+        <div>
+          <div className="mb-1 text-[11px] text-mf-text">{label}</div>
+          <Select
+            size="small"
+            className="w-full"
+            value={value}
+            options={options.map((o) => ({
+              value: String(o.value),
+              label: String(o.label),
+            }))}
+            onChange={(v) => onPatch(path, v)}
+          />
+        </div>
+      );
+    }
     case 'Image': {
       const src = resolveProp(node.src, dataModel);
       if (!src || typeof src !== 'string') return null;
@@ -87,6 +175,21 @@ function renderNode(node, index, dataModel, variant) {
       const text = String(resolveProp(node.text, dataModel) ?? '按钮');
       const href = resolveProp(node.href, dataModel);
       const isPrimary = node.variant === 'primary';
+      const actionName = typeof node.action === 'string' ? node.action : null;
+
+      if (actionName && interactive && onAction) {
+        return (
+          <Button
+            type={isPrimary ? 'primary' : 'default'}
+            size="small"
+            className={isPrimary ? '!bg-mf-cta !border-mf-cta' : ''}
+            onClick={() => onAction(actionName, dataModel)}
+          >
+            {text}
+          </Button>
+        );
+      }
+
       if (href && typeof href === 'string') {
         return (
           <Button
@@ -149,13 +252,41 @@ function renderNode(node, index, dataModel, variant) {
  * @param {{
  *   surface: import('../../lib/a2ui/build-tool-result-surface.js').A2uiSurfaceState,
  *   variant?: 'page' | 'float',
+ *   interactive?: boolean,
+ *   onAction?: (action: string, dataModel: Record<string, unknown>) => void,
  * }} props
  */
-export default function A2uiRenderer({ surface, variant = 'page' }) {
+export default function A2uiRenderer({
+  surface,
+  variant = 'page',
+  interactive = false,
+  onAction,
+}) {
+  const [dataModel, setDataModel] = useState(surface?.dataModel || {});
+
+  useEffect(() => {
+    setDataModel(surface?.dataModel || {});
+  }, [surface]);
+
+  const onPatch = useCallback((path, value) => {
+    setDataModel((prev) => setDataPath(prev, path, value));
+  }, []);
+
+  const handleAction = useCallback(
+    (actionName, model) => {
+      onAction?.(actionName, model);
+    },
+    [onAction],
+  );
+
   if (!surface?.components?.length) return null;
 
   const index = new Map(surface.components.map((c) => [c.id, c]));
   const root = index.get(surface.rootId) || surface.components[0];
 
-  return <div className="a2ui-surface">{renderNode(root, index, surface.dataModel, variant)}</div>;
+  return (
+    <div className="a2ui-surface">
+      {renderNode(root, index, dataModel, variant, interactive, onPatch, handleAction)}
+    </div>
+  );
 }

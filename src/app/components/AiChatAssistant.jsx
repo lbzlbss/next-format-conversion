@@ -28,6 +28,9 @@ const AiChatAssistant = () => {
     streamingToolCalls,
     streamingSurfaces,
     runningSurfaces,
+    awaitingA2uiAction,
+    interactiveSurfaceId,
+    handleSurfaceAction,
     send,
     stopStreaming,
     loading: streamLoading,
@@ -97,6 +100,8 @@ const AiChatAssistant = () => {
               streamingToolCalls={streamingToolCalls}
               streamingSurfaces={streamingSurfaces}
               runningSurfaces={runningSurfaces}
+              interactiveSurfaceId={interactiveSurfaceId}
+              onSurfaceAction={handleSurfaceAction}
               loading={busy}
               toolRunning={toolRunning}
               variant="float"

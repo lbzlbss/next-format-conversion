@@ -10,6 +10,9 @@
     "Image",
     "Button",
     "DownloadLink",
-    "Progress"
+    "Progress",
+    "ParamForm",
+    "Slider",
+    "Select"
   ]
 }

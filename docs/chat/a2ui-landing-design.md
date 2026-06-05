@@ -1,7 +1,7 @@
 # MediaFlow AI 对话助手 · A2UI 落地设计文档
 
-> **版本**：v0.2  
-> **状态**：P0 已落地（P1–P3 规划中）  
+> **版本**：v0.3  
+> **状态**：P0/P1 已落地（P2–P3 规划中）  
 > **关联页面**：`/chat`、悬浮窗 `AiChatAssistant`  
 > **协议基准**：[A2UI v0.9](https://a2ui.org/)（声明式 Generative UI）  
 > **最后更新**：2026-06-03
@@ -385,13 +385,13 @@ LLM 流式输出 A2UI（P2）：在 delta 解析层增加「结构化块检测�
 - [x] PDF 导出追加工具结果文字摘要（`generate-chat-pdf.js`）  
 - [ ] 验收：GIF→WebP / 文生图 / MP4 压缩结果卡与现版一致或更美（部署后人工确认）
 
-### P1：用户动作回传（3–5 天）
+### P1：用户动作回传（3–5 天）✅ 已完成
 
-- [ ] `/api/chat/a2ui-action`  
-- [ ] `ParamForm` + Slider/Select renderer  
-- [ ] 模糊意图 → 先表单 → 再执行工具  
-- [ ] 数字人 `awaitingUserInput` 状态  
-- [ ] Feature flag 与 fallback
+- [x] `/api/chat/a2ui-action`（动作白名单校验）  
+- [x] `ParamForm` + `Slider` / `Select` renderer  
+- [x] 模糊意图 → 先表单 → 再执行工具（`shouldShowParamForm`）  
+- [x] 数字人 `awaitingA2uiAction` → `idle`  
+- [x] `NEXT_PUBLIC_A2UI_PARAM_FORM=0` 关闭参数表单
 
 ### P2：LLM 生成 A2UI（5–8 天）
 
