@@ -2,6 +2,8 @@
 
 import { Avatar } from 'antd';
 import { RobotOutlined, UserOutlined, BulbOutlined } from '@ant-design/icons';
+import A2uiSurfaceHost from '../a2ui/A2uiSurfaceHost';
+import { A2UI_ENABLED } from '../../lib/a2ui/constants.js';
 import WikiSources from './WikiSources';
 import ChatPdfButton from './ChatPdfButton';
 import ToolResultCard from './ToolResultCard';
@@ -13,6 +15,8 @@ import ToolResultCard from './ToolResultCard';
  *   streamingContent?: string,
  *   streamingSources?: Array<{ slug: string, title: string }>,
  *   streamingToolCalls?: import('../../hooks/useChatStream.js').ToolCall[],
+ *   streamingSurfaces?: import('../../lib/a2ui/build-tool-result-surface.js').A2uiSurfaceState[],
+ *   runningSurfaces?: import('../../lib/a2ui/build-tool-result-surface.js').A2uiSurfaceState[],
  *   loading?: boolean,
  *   toolRunning?: boolean,
  *   variant?: 'page' | 'float',
@@ -24,6 +28,8 @@ export default function ChatMessageList({
   streamingContent = '',
   streamingSources = [],
   streamingToolCalls = [],
+  streamingSurfaces = [],
+  runningSurfaces = [],
   loading = false,
   toolRunning = false,
   variant = 'page',
@@ -36,7 +42,9 @@ export default function ChatMessageList({
     Boolean(streamingThinking) ||
     Boolean(streamingContent) ||
     (streamingSources?.length ?? 0) > 0 ||
-    (streamingToolCalls?.length ?? 0) > 0;
+    (streamingToolCalls?.length ?? 0) > 0 ||
+    (streamingSurfaces?.length ?? 0) > 0 ||
+    (runningSurfaces?.length ?? 0) > 0;
 
   return (
     <div className={isPage ? 'mx-auto max-w-3xl space-y-5' : 'space-y-4'}>
@@ -96,7 +104,10 @@ export default function ChatMessageList({
                 </div>
               ) : null}
               <div className="whitespace-pre-wrap break-words">{String(m.content)}</div>
-              {m.role === 'assistant' && Array.isArray(m.toolCalls)
+              {m.role === 'assistant' && A2UI_ENABLED && Array.isArray(m.surfaces) && m.surfaces.length > 0 ? (
+                <A2uiSurfaceHost surfaces={m.surfaces} variant={variant} />
+              ) : null}
+              {m.role === 'assistant' && !A2UI_ENABLED && Array.isArray(m.toolCalls)
                 ? m.toolCalls.map((tc) => (
                     <ToolResultCard key={String(tc.id)} toolCall={tc} />
                   ))
@@ -151,10 +162,18 @@ export default function ChatMessageList({
                   : 'rounded-2xl rounded-tl-md bg-[#f1f5f9] px-4 py-2 text-[13px] text-[#0f172a]'
               }
             >
-              {streamingToolCalls.map((tc) => (
-                <ToolResultCard key={String(tc.id)} toolCall={tc} />
-              ))}
-              {toolRunning && !streamingContent && streamingToolCalls.length === 0 ? (
+              {A2UI_ENABLED && streamingSurfaces.length > 0 ? (
+                <A2uiSurfaceHost surfaces={streamingSurfaces} variant={variant} />
+              ) : null}
+              {!A2UI_ENABLED
+                ? streamingToolCalls.map((tc) => (
+                    <ToolResultCard key={String(tc.id)} toolCall={tc} />
+                  ))
+                : null}
+              {A2UI_ENABLED && toolRunning && runningSurfaces.length > 0 && streamingSurfaces.length === 0 ? (
+                <A2uiSurfaceHost surfaces={runningSurfaces} variant={variant} />
+              ) : null}
+              {!A2UI_ENABLED && toolRunning && !streamingContent && streamingToolCalls.length === 0 ? (
                 <ToolResultCard
                   toolCall={{
                     id: 'running',

@@ -1,20 +1,18 @@
-version: '3.8'
-
+# 生产部署（阿里云 ECS 推荐用本文件，不要用卷覆盖 /app）
 services:
   app:
-    build: .
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: next-gif-to-webp
     ports:
-      - "3000:3000"
+      - "8090:3000"
     environment:
-      - NODE_ENV=production
-      - NEXT_PUBLIC_API_URL=http://localhost:3000
-    volumes:
-      - .:/app
-      - /app/node_modules
+      NODE_ENV: production
+      HOSTNAME: "0.0.0.0"
+      PORT: "3000"
+    # 需要时在项目根目录创建 .env.production，并取消下一行注释
+    # env_file:
+    #   - .env.production
     restart: unless-stopped
-    networks:
-      - app-network
-
-networks:
-  app-network:
-    driver: bridge
+    # 勿挂载 .:/app —— 会覆盖镜像内 .next，导致 next start 立刻退出并无限重启

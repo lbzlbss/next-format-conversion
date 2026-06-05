@@ -90,6 +90,9 @@ export function useChatStream({ setMessages, chatContext = {} }) {
   const [streamingThinking, setStreamingThinking] = useState('');
   const [streamingSources, setStreamingSources] = useState([]);
   const [streamingToolCalls, setStreamingToolCalls] = useState([]);
+  const [streamingSurfaces, setStreamingSurfaces] = useState(
+    /** @type {import('../lib/a2ui/build-tool-result-surface.js').A2uiSurfaceState[]} */ ([]),
+  );
   const abortRef = useRef(/** @type {AbortController | null} */ (null));
   const readerRef = useRef(/** @type {ReadableStreamDefaultReader<Uint8Array> | null} */ (null));
 
@@ -102,13 +105,20 @@ export function useChatStream({ setMessages, chatContext = {} }) {
     /**
      * @param {Array<{id:string,role:string,content:string,attachments?:ChatAttachmentMeta[],toolCalls?:ToolCall[]}>} historyMessages
      * @param {string} userText
-     * @param {{ appendUser?: boolean, toolKey?: string|null, pendingToolCalls?: ToolCall[], apiUserContent?: string }} [options]
+     * @param {{
+     *   appendUser?: boolean,
+     *   toolKey?: string|null,
+     *   pendingToolCalls?: ToolCall[],
+     *   pendingSurfaces?: import('../lib/a2ui/build-tool-result-surface.js').A2uiSurfaceState[],
+     *   apiUserContent?: string,
+     * }} [options]
      */
     async (historyMessages, userText, options = {}) => {
       const {
         appendUser = true,
         toolKey: toolKeyOverride = null,
         pendingToolCalls = [],
+        pendingSurfaces = [],
         apiUserContent,
       } = options;
 
@@ -129,6 +139,7 @@ export function useChatStream({ setMessages, chatContext = {} }) {
       setStreamingThinking('');
       setStreamingSources([]);
       setStreamingToolCalls(pendingToolCalls);
+      setStreamingSurfaces(pendingSurfaces);
 
       let fullContent = '';
       let fullThinking = '';
@@ -210,6 +221,7 @@ export function useChatStream({ setMessages, chatContext = {} }) {
         setStreamingThinking('');
         setStreamingSources([]);
         setStreamingToolCalls([]);
+        setStreamingSurfaces([]);
 
         setMessages((prev) => [
           ...prev,
@@ -220,6 +232,7 @@ export function useChatStream({ setMessages, chatContext = {} }) {
             ...(fullThinking ? { thinking: fullThinking } : {}),
             ...(sources.length > 0 ? { sources } : {}),
             ...(pendingToolCalls.length > 0 ? { toolCalls: pendingToolCalls } : {}),
+            ...(pendingSurfaces.length > 0 ? { surfaces: pendingSurfaces } : {}),
           },
         ]);
       } catch (err) {
@@ -232,6 +245,7 @@ export function useChatStream({ setMessages, chatContext = {} }) {
         setStreamingThinking('');
         setStreamingSources([]);
         setStreamingToolCalls([]);
+        setStreamingSurfaces([]);
 
         if (aborted) {
           const pausedContent =
@@ -249,6 +263,7 @@ export function useChatStream({ setMessages, chatContext = {} }) {
               ...(fullThinking ? { thinking: fullThinking } : {}),
               ...(sources.length > 0 ? { sources } : {}),
               ...(pendingToolCalls.length > 0 ? { toolCalls: pendingToolCalls } : {}),
+              ...(pendingSurfaces.length > 0 ? { surfaces: pendingSurfaces } : {}),
             },
           ]);
         } else {
@@ -263,6 +278,7 @@ export function useChatStream({ setMessages, chatContext = {} }) {
                 ? `转换已完成，但解说生成失败：${errMsg}`
                 : errMsg,
               ...(pendingToolCalls.length > 0 ? { toolCalls: pendingToolCalls } : {}),
+              ...(pendingSurfaces.length > 0 ? { surfaces: pendingSurfaces } : {}),
             },
           ]);
         }
@@ -281,6 +297,7 @@ export function useChatStream({ setMessages, chatContext = {} }) {
     streamingThinking,
     streamingSources,
     streamingToolCalls,
+    streamingSurfaces,
     sendMessage,
     stopStreaming,
   };

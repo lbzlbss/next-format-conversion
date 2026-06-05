@@ -1,0 +1,15 @@
+{
+  "id": "mediaflow-chat-v1",
+  "version": "1.0.0",
+  "description": "MediaFlow 对话助手工具结果与基础展示组件",
+  "components": [
+    "Text",
+    "Card",
+    "Column",
+    "Tag",
+    "Image",
+    "Button",
+    "DownloadLink",
+    "Progress"
+  ]
+}

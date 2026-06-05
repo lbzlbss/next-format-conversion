@@ -1,0 +1,15 @@
+node_modules
+.next
+.git
+.cursor
+.env
+.env.*
+!.env.example
+data
+docs/agent/runs
+docs/agent/archive
+*.md
+!README.md
+.DS_Store
+npm-debug.log*
+pnpm-debug.log*

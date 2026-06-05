@@ -3,7 +3,7 @@
  * @param {Object} options
  * @param {string} [options.title]
  * @param {string} [options.filename]
- * @param {Array<{ role: string, content: string, thinking?: string, sources?: unknown[] }>} options.messages
+ * @param {Array<{ role: string, content: string, thinking?: string, sources?: unknown[], surfaces?: unknown[], toolCalls?: unknown[] }>} options.messages
  * @param {boolean} [options.includeThinking]
  */
 export async function downloadChatPdf({
@@ -42,15 +42,21 @@ export async function downloadChatPdf({
 
 /**
  * 从对话列表筛出可导出消息（跳过欢迎语）
- * @param {Array<{ id?: string, role: string, content: string, thinking?: string, sources?: unknown[] }>} messages
+ * @param {Array<{ id?: string, role: string, content: string, thinking?: string, sources?: unknown[], surfaces?: unknown[], toolCalls?: unknown[] }>} messages
  */
 export function messagesForPdfExport(messages) {
   return messages
-    .filter((m) => m.id !== "welcome" && m.content?.trim())
+    .filter(
+      (m) =>
+        m.id !== "welcome" &&
+        (m.content?.trim() || m.surfaces?.length || m.toolCalls?.length),
+    )
     .map((m) => ({
       role: m.role,
-      content: m.content,
+      content: m.content?.trim() || "（工具结果见下方摘要）",
       ...(m.thinking ? { thinking: m.thinking } : {}),
       ...(m.sources?.length ? { sources: m.sources } : {}),
+      ...(m.surfaces?.length ? { surfaces: m.surfaces } : {}),
+      ...(m.toolCalls?.length ? { toolCalls: m.toolCalls } : {}),
     }));
 }

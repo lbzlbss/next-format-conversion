@@ -37,6 +37,8 @@ export default function ChatPanel({ variant = 'page', className = '', toolKey = 
     streamingThinking,
     streamingSources,
     streamingToolCalls,
+    streamingSurfaces,
+    runningSurfaces,
     send,
     stopStreaming,
     loading: streamLoading,
@@ -98,6 +100,8 @@ export default function ChatPanel({ variant = 'page', className = '', toolKey = 
               streamingContent={streamingContent}
               streamingSources={streamingSources}
               streamingToolCalls={streamingToolCalls}
+              streamingSurfaces={streamingSurfaces}
+              runningSurfaces={runningSurfaces}
               loading={busy}
               toolRunning={toolRunning}
               variant="page"
@@ -137,6 +141,8 @@ export default function ChatPanel({ variant = 'page', className = '', toolKey = 
           streamingContent={streamingContent}
           streamingSources={streamingSources}
           streamingToolCalls={streamingToolCalls}
+          streamingSurfaces={streamingSurfaces}
+          runningSurfaces={runningSurfaces}
           loading={busy}
           toolRunning={toolRunning}
           variant="float"

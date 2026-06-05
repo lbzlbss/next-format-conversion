@@ -26,6 +26,8 @@ const AiChatAssistant = () => {
     streamingThinking,
     streamingSources,
     streamingToolCalls,
+    streamingSurfaces,
+    runningSurfaces,
     send,
     stopStreaming,
     loading: streamLoading,
@@ -93,6 +95,8 @@ const AiChatAssistant = () => {
               streamingContent={streamingContent}
               streamingSources={streamingSources}
               streamingToolCalls={streamingToolCalls}
+              streamingSurfaces={streamingSurfaces}
+              runningSurfaces={runningSurfaces}
               loading={busy}
               toolRunning={toolRunning}
               variant="float"

@@ -24,6 +24,71 @@ const CONTENT_WIDTH = PAGE_WIDTH - MARGIN * 2;
 /** @type {Uint8Array|null} */
 let cachedFont = null;
 
+function formatBytes(n) {
+  if (!n || typeof n !== "number") return "—";
+  if (n >= 1024 * 1024) return `${(n / 1024 / 1024).toFixed(1)} MB`;
+  if (n >= 1024) return `${(n / 1024).toFixed(0)} KB`;
+  return `${n} B`;
+}
+
+/**
+ * @param {{ dataModel?: { tool?: Record<string, unknown> } }} surface
+ * @returns {string[]}
+ */
+function surfaceToPdfLines(surface) {
+  const t = surface?.dataModel?.tool;
+  if (!t || typeof t !== "object") return [];
+
+  const lines = [`[工具] ${t.label || t.toolId || "未知工具"}`];
+  if (t.status === "error") {
+    lines.push(`状态: 失败`);
+    return lines;
+  }
+  if (typeof t.fileName === "string" && t.fileName) {
+    lines.push(`文件: ${t.fileName}`);
+  }
+  if (t.beforeBytes && t.afterBytes) {
+    lines.push(`体积: ${formatBytes(t.beforeBytes)} → ${formatBytes(t.afterBytes)}`);
+    if (t.savedPercent) lines.push(`约减小 ${t.savedPercent}%`);
+  }
+  if (typeof t.downloadUrl === "string" && t.downloadUrl) {
+    lines.push(`下载: ${t.downloadUrl}`);
+  }
+  if (typeof t.imageUrl === "string" && t.imageUrl) {
+    lines.push(`图片: ${t.imageUrl}`);
+  }
+  return lines;
+}
+
+/**
+ * @param {{ toolId?: string, status?: string, error?: string, output?: Record<string, unknown> }} tc
+ * @returns {string[]}
+ */
+function toolCallToPdfLines(tc) {
+  if (!tc) return [];
+  const lines = [`[工具] ${tc.toolId || "未知工具"}`];
+  if (tc.status === "error") {
+    lines.push(`状态: 失败`);
+    if (tc.error) lines.push(String(tc.error));
+    return lines;
+  }
+  const out = tc.output;
+  if (!out) return lines;
+  if (typeof out.fileName === "string" && out.fileName) {
+    lines.push(`文件: ${out.fileName}`);
+  }
+  if (out.beforeBytes && out.afterBytes) {
+    lines.push(`体积: ${formatBytes(out.beforeBytes)} → ${formatBytes(out.afterBytes)}`);
+  }
+  if (typeof out.downloadUrl === "string" && out.downloadUrl) {
+    lines.push(`下载: ${out.downloadUrl}`);
+  }
+  if (typeof out.imageUrl === "string" && out.imageUrl) {
+    lines.push(`图片: ${out.imageUrl}`);
+  }
+  return lines;
+}
+
 async function loadChineseFont() {
   if (cachedFont) return cachedFont;
 
@@ -119,7 +184,7 @@ function drawLines(ctx, text, opts) {
 /**
  * @param {Object} options
  * @param {string} options.title
- * @param {Array<{ role: string, content: string, thinking?: string, sources?: Array<{ title: string, slug?: string }> }>} options.messages
+ * @param {Array<{ role: string, content: string, thinking?: string, sources?: Array<{ title: string, slug?: string }>, surfaces?: unknown[], toolCalls?: unknown[] }>} options.messages
  * @param {boolean} [options.includeThinking]
  */
 export async function generateChatPdfBuffer({
@@ -199,6 +264,32 @@ export async function generateChatPdfBuffer({
         drawLines(ctx, `· ${s.title || s.slug || "条目"}`, {
           fontSize: 9,
           color: rgb(0.11, 0.31, 0.85),
+          lineHeight: 13,
+          indent: 12,
+        });
+      }
+    }
+
+    const surfaceLines = Array.isArray(msg.surfaces)
+      ? msg.surfaces.flatMap((s) => surfaceToPdfLines(s))
+      : [];
+    const toolLines =
+      surfaceLines.length === 0 && Array.isArray(msg.toolCalls)
+        ? msg.toolCalls.flatMap((tc) => toolCallToPdfLines(tc))
+        : [];
+
+    const toolSummary = [...surfaceLines, ...toolLines];
+    if (toolSummary.length > 0) {
+      ctx.y -= 6;
+      drawLines(ctx, "工具结果摘要：", {
+        fontSize: 9,
+        color: rgb(0.28, 0.33, 0.41),
+        lineHeight: 13,
+      });
+      for (const line of toolSummary) {
+        drawLines(ctx, `· ${line}`, {
+          fontSize: 9,
+          color: rgb(0.28, 0.33, 0.41),
           lineHeight: 13,
           indent: 12,
         });

@@ -9,7 +9,7 @@ const MAX_CONTENT_LEN = 120_000;
 
 /**
  * POST /api/chat/pdf
- * Body: { title?, messages: [{ role, content, thinking?, sources? }], includeThinking?, filename? }
+ * Body: { title?, messages: [{ role, content, thinking?, sources?, surfaces?, toolCalls? }], includeThinking?, filename? }
  */
 export async function POST(request) {
   try {
@@ -42,6 +42,8 @@ export async function POST(request) {
         content: m.content.trim(),
         thinking: typeof m.thinking === "string" ? m.thinking : undefined,
         sources: Array.isArray(m.sources) ? m.sources : undefined,
+        surfaces: Array.isArray(m.surfaces) ? m.surfaces : undefined,
+        toolCalls: Array.isArray(m.toolCalls) ? m.toolCalls : undefined,
       }));
 
     if (normalized.length === 0) {
